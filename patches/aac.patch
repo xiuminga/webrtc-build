@@ -1,0 +1,17 @@
+diff --git a/webrtc.gni b/webrtc.gni
+index 103983dec4..da13ce6da0 100644
+--- a/webrtc.gni
++++ b/webrtc.gni
+@@ -196,6 +196,12 @@ declare_args() {
+   if (build_with_chromium) {
+     rtc_use_h265 = enable_hevc_parser_and_hw_decoder
+   } else {
+     rtc_use_h265 = true
+   }
+ 
++  # Enable AAC audio codec support.
++  # AAC is not a standard WebRTC codec but can be useful for specific applications.
++  # Note: This requires platform-specific AAC encoder/decoder support.
++  rtc_use_aac = true
++
+   # Enable this flag to make webrtc::Mutex be implemented by absl::Mutex.

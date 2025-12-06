@@ -308,6 +308,17 @@ h265.patch と併用することを前提とした iOS で H.265 を利用でき
 WebKit で施されている H.265 対応差分を最新の libwebrtc に適用します。おそらく macOS も同様のコードで動作しますが現状では検証しておりません。
 libwebrtc の iOS ハードウェアエンコード実装が H.265 に対応すると不要となると考えています。
 
+## aac.patch
+
+WebRTC で AAC 音声コーデックを利用できるようにするパッチ。
+
+AAC (Advanced Audio Coding) は WebRTC の標準音声コーデックではありませんが、特定のアプリケーションや既存のシステムとの互換性のために有用です。
+このパッチは webrtc.gni に `rtc_use_aac` フラグを追加し、ビルド時に AAC サポートを有効にできるようにします。
+
+注意: このパッチは AAC コーデックのビルド設定を有効にするのみです。実際の AAC エンコーダー/デコーダーの実装は、プラットフォーム固有のハードウェアアクセラレーション（例: Android の MediaCodec、iOS の AudioToolbox）または外部ライブラリ（例: FFmpeg の libfdk-aac）を利用する必要があります。
+
+WebRTC の標準音声コーデック（Opus、G.711）を利用することを推奨しますが、特定の要件がある場合にこのパッチを使用できます。
+
 ## fix_perfetto.patch
 
 rtc_use_perfetto=false した時にコンパイルエラーになる問題を修正するパッチ。
