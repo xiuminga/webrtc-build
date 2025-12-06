@@ -313,11 +313,47 @@ libwebrtc の iOS ハードウェアエンコード実装が H.265 に対応す�
 WebRTC で AAC 音声コーデックを利用できるようにするパッチ。
 
 AAC (Advanced Audio Coding) は WebRTC の標準音声コーデックではありませんが、特定のアプリケーションや既存のシステムとの互換性のために有用です。
-このパッチは webrtc.gni に `rtc_use_aac` フラグを追加し、ビルド時に AAC サポートを有効にできるようにします。
+このパッチは以下を提供します：
 
-注意: このパッチは AAC コーデックのビルド設定を有効にするのみです。実際の AAC エンコーダー/デコーダーの実装は、プラットフォーム固有のハードウェアアクセラレーション（例: Android の MediaCodec、iOS の AudioToolbox）または外部ライブラリ（例: FFmpeg の libfdk-aac）を利用する必要があります。
+- webrtc.gni に `rtc_use_aac` フラグを追加
+- AAC エンコーダー/デコーダーの API インターフェース（api/audio_codecs/aac/）
+- AAC コーデックの基本実装（modules/audio_coding/codecs/aac/）
+- ビルドシステムへの統合（BUILD.gn ファイル）
+
+このパッチは AAC コーデックの基本構造を提供します。実際のプラットフォーム固有の実装は `aac_android.patch` および `aac_ios.patch` で提供されます。
 
 WebRTC の標準音声コーデック（Opus、G.711）を利用することを推奨しますが、特定の要件がある場合にこのパッチを使用できます。
+
+## aac_android.patch
+
+Android で AAC 音声コーデックを利用できるようにするパッチ。
+
+aac.patch と併用することを前提とした Android で AAC を利用できるようにするパッチです。
+このパッチは Android の MediaCodec API を使用した AAC エンコーダー/デコーダーの実装を提供します。
+
+主な機能：
+- MediaCodec ベースの AAC エンコーダー実装（aac_platform_encoder_android.cc/h）
+- MediaCodec ベースの AAC デコーダー実装（aac_platform_decoder_android.cc/h）
+- 48kHz ステレオ AAC-LC エンコーディング対応
+- ビットレート 128kbps デフォルト設定
+
+注意: MediaCodec の実装は JNI を通じて Android システムと連携する必要があります。実際の JNI 実装は別途必要になる場合があります。
+
+## aac_ios.patch
+
+iOS/macOS で AAC 音声コーデックを利用できるようにするパッチ。
+
+aac.patch と併用することを前提とした iOS/macOS で AAC を利用できるようにするパッチです。
+このパッチは iOS/macOS の AudioToolbox フレームワークを使用した AAC エンコーダー/デコーダーの実装を提供します。
+
+主な機能：
+- AudioToolbox ベースの AAC エンコーダー実装（aac_platform_encoder_ios.mm/h）
+- AudioToolbox ベースの AAC デコーダー実装（aac_platform_decoder_ios.mm/h）
+- AudioConverter API を使用した高品質エンコーディング
+- 48kHz ステレオ AAC-LC エンコーディング対応
+- ビットレート 128kbps デフォルト設定
+
+AudioToolbox フレームワークはハードウェアアクセラレーションを活用し、低レイテンシー・低 CPU 使用率でのエンコーディング/デコーディングを実現します。
 
 ## fix_perfetto.patch
 
