@@ -24,7 +24,6 @@ index 0000000000..a65926f0da4b
 +    "../../../../../api/audio_codecs:audio_codecs_api",
 +    "../../../../../rtc_base:checks",
 +    "../../../../../rtc_base:logging",
-+    "../../../../../sdk/android:native_api",
 +  ]
 +  absl_deps = [
 +    "//third_party/abseil-cpp/absl/base:nullability",
@@ -41,7 +40,6 @@ index 0000000000..a65926f0da4b
 +    "../../../../../api/audio_codecs:audio_codecs_api",
 +    "../../../../../rtc_base:checks",
 +    "../../../../../rtc_base:logging",
-+    "../../../../../sdk/android:native_api",
 +  ]
 +  absl_deps = [
 +    "//third_party/abseil-cpp/absl/base:nullability",

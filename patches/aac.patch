@@ -16,7 +16,7 @@ index 103983dec4..da13ce6da0 100644
 +
    # Enable this flag to make webrtc::Mutex be implemented by absl::Mutex.
 diff --git a/api/audio_codecs/BUILD.gn b/api/audio_codecs/BUILD.gn
-index a1234567..b2345678 100644
+index 1a2b3c4d5e..2f3g4h5i6j 100644
 --- a/api/audio_codecs/BUILD.gn
 +++ b/api/audio_codecs/BUILD.gn
 @@ -100,6 +100,10 @@ rtc_library("builtin_audio_encoder_factory") {

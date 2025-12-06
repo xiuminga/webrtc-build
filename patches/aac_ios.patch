@@ -250,19 +250,19 @@ index 0000000000..87c0641e11d6
 +    AudioBufferList* ioData,
 +    AudioStreamPacketDescription** outDataPacketDescription,
 +    void* inUserData) {
-+  auto* input_buffer = static_cast<std::vector<int16_t>*>(inUserData);
++  auto* impl = static_cast<AacPlatformEncoderIos::Impl*>(inUserData);
 +  
-+  if (input_buffer->empty()) {
++  if (impl->input_buffer.empty()) {
 +    *ioNumberDataPackets = 0;
 +    return noErr;
 +  }
 +  
 +  ioData->mNumberBuffers = 1;
-+  ioData->mBuffers[0].mNumberChannels = 2;  // Stereo
-+  ioData->mBuffers[0].mDataByteSize = input_buffer->size() * sizeof(int16_t);
-+  ioData->mBuffers[0].mData = input_buffer->data();
++  ioData->mBuffers[0].mNumberChannels = impl->config.num_channels;
++  ioData->mBuffers[0].mDataByteSize = impl->input_buffer.size() * sizeof(int16_t);
++  ioData->mBuffers[0].mData = impl->input_buffer.data();
 +  
-+  *ioNumberDataPackets = input_buffer->size() / 2;  // Stereo frames
++  *ioNumberDataPackets = impl->input_buffer.size() / impl->config.num_channels;
 +  
 +  return noErr;
 +}
@@ -299,7 +299,7 @@ index 0000000000..87c0641e11d6
 +  OSStatus status = AudioConverterFillComplexBuffer(
 +      impl_->audio_converter,
 +      AacEncoderInputCallback,
-+      &impl_->input_buffer,
++      impl_.get(),
 +      &output_packet_count,
 +      &output_buffer_list,
 +      &packet_desc);
