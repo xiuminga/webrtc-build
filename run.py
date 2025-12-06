@@ -172,8 +172,8 @@ def get_depot_tools(source_dir, fetch=False):
     dir = os.path.join(source_dir, "depot_tools")
     if os.path.exists(dir):
         if fetch:
-            cmd(["git", "fetch"])
-            cmd(["git", "checkout", "-f", "origin/HEAD"])
+            cmd(["git", "fetch"], cwd=dir)
+            cmd(["git", "checkout", "-f", "origin/HEAD"], cwd=dir)
     else:
         cmd(
             [
