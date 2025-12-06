@@ -1,0 +1,498 @@
+diff --git a/modules/audio_coding/codecs/aac/android/BUILD.gn b/modules/audio_coding/codecs/aac/android/BUILD.gn
+new file mode 100644
+index 0000000000..a65926f0da4b
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/android/BUILD.gn
+@@ -0,0 +1,50 @@
++# Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++#
++# Use of this source code is governed by a BSD-style license
++# that can be found in the LICENSE file in the root of the source
++# tree. An additional intellectual property rights grant can be found
++# in the file PATENTS.  All contributing project authors may
++# be found in the AUTHORS file in the root of the source tree.
++
++import("../../../../../webrtc.gni")
++
++rtc_library("aac_platform_encoder_android") {
++  visibility = [ "*" ]
++  sources = [
++    "aac_platform_encoder_android.cc",
++    "aac_platform_encoder_android.h",
++  ]
++  deps = [
++    "../../../../../api/audio_codecs:audio_codecs_api",
++    "../../../../../rtc_base:checks",
++    "../../../../../rtc_base:logging",
++  ]
++  absl_deps = [
++    "//third_party/abseil-cpp/absl/base:nullability",
++  ]
++}
++
++rtc_library("aac_platform_decoder_android") {
++  visibility = [ "*" ]
++  sources = [
++    "aac_platform_decoder_android.cc",
++    "aac_platform_decoder_android.h",
++  ]
++  deps = [
++    "../../../../../api/audio_codecs:audio_codecs_api",
++    "../../../../../rtc_base:checks",
++    "../../../../../rtc_base:logging",
++  ]
++  absl_deps = [
++    "//third_party/abseil-cpp/absl/base:nullability",
++  ]
++}
+diff --git a/modules/audio_coding/codecs/aac/android/aac_platform_encoder_android.h b/modules/audio_coding/codecs/aac/android/aac_platform_encoder_android.h
+new file mode 100644
+index 0000000000..7d9e3ebd3e0f
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/android/aac_platform_encoder_android.h
+@@ -0,0 +1,113 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#ifndef MODULES_AUDIO_CODING_CODECS_AAC_ANDROID_AAC_PLATFORM_ENCODER_ANDROID_H_
++#define MODULES_AUDIO_CODING_CODECS_AAC_ANDROID_AAC_PLATFORM_ENCODER_ANDROID_H_
++
++#include <memory>
++#include <vector>
++
++#include "api/audio_codecs/audio_encoder.h"
++#include "rtc_base/buffer.h"
++
++namespace webrtc {
++
++// AAC encoder implementation using Android MediaCodec
++class AacPlatformEncoderAndroid final : public AudioEncoder {
++ public:
++  struct Config {
++    int sample_rate_hz = 48000;
++    int num_channels = 2;
++    int bitrate_bps = 128000;
++    int frame_size_ms = 20;
++  };
++
++  explicit AacPlatformEncoderAndroid(const Config& config, int payload_type);
++  ~AacPlatformEncoderAndroid() override;
++
++  AacPlatformEncoderAndroid(const AacPlatformEncoderAndroid&) = delete;
++  AacPlatformEncoderAndroid& operator=(const AacPlatformEncoderAndroid&) = delete;
++
++  int SampleRateHz() const override;
++  size_t NumChannels() const override;
++  size_t Num10MsFramesInNextPacket() const override;
++  size_t Max10MsFramesInAPacket() const override;
++  int GetTargetBitrate() const override;
++
++  EncodedInfo EncodeImpl(uint32_t rtp_timestamp,
++                         rtc::ArrayView<const int16_t> audio,
++                         rtc::Buffer* encoded) override;
++  void Reset() override;
++
++ private:
++  bool InitEncoder();
++  void ReleaseEncoder();
++
++  const Config config_;
++  const int payload_type_;
++  bool encoder_initialized_;
++  
++  // Android MediaCodec encoder handle (using JNI)
++  void* media_codec_encoder_;
++  
++  // Encoding state
++  std::vector<uint8_t> input_buffer_;
++  int64_t num_10ms_frames_per_packet_;
++};
++
++}  // namespace webrtc
++
++#endif  // MODULES_AUDIO_CODING_CODECS_AAC_ANDROID_AAC_PLATFORM_ENCODER_ANDROID_H_
+diff --git a/modules/audio_coding/codecs/aac/android/aac_platform_encoder_android.cc b/modules/audio_coding/codecs/aac/android/aac_platform_encoder_android.cc
+new file mode 100644
+index 0000000000..897e4f9667c7
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/android/aac_platform_encoder_android.cc
+@@ -0,0 +1,161 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#include "modules/audio_coding/codecs/aac/android/aac_platform_encoder_android.h"
++
++#include <algorithm>
++#include <memory>
++#include <utility>
++
++#include "rtc_base/checks.h"
++#include "rtc_base/logging.h"
++
++namespace webrtc {
++
++namespace {
++
++constexpr int kSupportedSampleRate = 48000;
++constexpr int kMaxChannels = 2;
++
++}  // namespace
++
++AacPlatformEncoderAndroid::AacPlatformEncoderAndroid(const Config& config,
++                                                     int payload_type)
++    : config_(config),
++      payload_type_(payload_type),
++      encoder_initialized_(false),
++      media_codec_encoder_(nullptr),
++      num_10ms_frames_per_packet_(config.frame_size_ms / 10) {
++  RTC_CHECK_EQ(config_.sample_rate_hz, kSupportedSampleRate);
++  RTC_CHECK_LE(config_.num_channels, kMaxChannels);
++  RTC_CHECK_GT(config_.bitrate_bps, 0);
++  
++  InitEncoder();
++}
++
++AacPlatformEncoderAndroid::~AacPlatformEncoderAndroid() {
++  ReleaseEncoder();
++}
++
++bool AacPlatformEncoderAndroid::InitEncoder() {
++  RTC_LOG(LS_INFO) << "AacPlatformEncoderAndroid::InitEncoder() - "
++                   << "sample_rate=" << config_.sample_rate_hz
++                   << " channels=" << config_.num_channels
++                   << " bitrate=" << config_.bitrate_bps;
++
++  // TODO: Initialize Android MediaCodec encoder
++  // This requires JNI calls to:
++  // 1. Create MediaCodec instance with "audio/mp4a-latm" mime type
++  // 2. Configure with MediaFormat (sample rate, channels, bitrate)
++  // 3. Start the encoder
++  
++  encoder_initialized_ = false;  // Will be true after MediaCodec init
++  RTC_LOG(LS_WARNING) << "MediaCodec AAC encoder initialization not yet implemented";
++  
++  return encoder_initialized_;
++}
++
++void AacPlatformEncoderAndroid::ReleaseEncoder() {
++  if (encoder_initialized_) {
++    // TODO: Release MediaCodec encoder
++    // This requires JNI calls to:
++    // 1. Stop the encoder
++    // 2. Release MediaCodec instance
++    
++    encoder_initialized_ = false;
++    media_codec_encoder_ = nullptr;
++  }
++}
++
++int AacPlatformEncoderAndroid::SampleRateHz() const {
++  return config_.sample_rate_hz;
++}
++
++size_t AacPlatformEncoderAndroid::NumChannels() const {
++  return config_.num_channels;
++}
++
++size_t AacPlatformEncoderAndroid::Num10MsFramesInNextPacket() const {
++  return num_10ms_frames_per_packet_;
++}
++
++size_t AacPlatformEncoderAndroid::Max10MsFramesInAPacket() const {
++  return num_10ms_frames_per_packet_;
++}
++
++int AacPlatformEncoderAndroid::GetTargetBitrate() const {
++  return config_.bitrate_bps;
++}
++
++AudioEncoder::EncodedInfo AacPlatformEncoderAndroid::EncodeImpl(
++    uint32_t rtp_timestamp,
++    rtc::ArrayView<const int16_t> audio,
++    rtc::Buffer* encoded) {
++  EncodedInfo info;
++  info.encoded_timestamp = rtp_timestamp;
++  info.payload_type = payload_type_;
++
++  if (!encoder_initialized_) {
++    RTC_LOG(LS_WARNING) << "AAC encoder not initialized";
++    return info;
++  }
++
++  // TODO: Implement AAC encoding using MediaCodec
++  // This requires:
++  // 1. Get input buffer from MediaCodec
++  // 2. Copy PCM audio data to input buffer
++  // 3. Queue input buffer
++  // 4. Dequeue output buffer
++  // 5. Copy encoded AAC data to encoded buffer
++  // 6. Release output buffer
++  
++  // For now, return empty encoded info
++  RTC_LOG(LS_VERBOSE) << "AAC encoding not yet implemented - "
++                      << "timestamp=" << rtp_timestamp
++                      << " audio_samples=" << audio.size();
++  
++  return info;
++}
++
++void AacPlatformEncoderAndroid::Reset() {
++  RTC_LOG(LS_INFO) << "AacPlatformEncoderAndroid::Reset()";
++  ReleaseEncoder();
++  InitEncoder();
++}
++
++}  // namespace webrtc
+diff --git a/modules/audio_coding/codecs/aac/android/aac_platform_decoder_android.h b/modules/audio_coding/codecs/aac/android/aac_platform_decoder_android.h
+new file mode 100644
+index 0000000000..07ebd3c8a4c8
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/android/aac_platform_decoder_android.h
+@@ -0,0 +1,80 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#ifndef MODULES_AUDIO_CODING_CODECS_AAC_ANDROID_AAC_PLATFORM_DECODER_ANDROID_H_
++#define MODULES_AUDIO_CODING_CODECS_AAC_ANDROID_AAC_PLATFORM_DECODER_ANDROID_H_
++
++#include <memory>
++#include <vector>
++
++#include "api/audio_codecs/audio_decoder.h"
++
++namespace webrtc {
++
++// AAC decoder implementation using Android MediaCodec
++class AacPlatformDecoderAndroid final : public AudioDecoder {
++ public:
++  struct Config {
++    int sample_rate_hz = 48000;
++    int num_channels = 2;
++  };
++
++  explicit AacPlatformDecoderAndroid(const Config& config);
++  ~AacPlatformDecoderAndroid() override;
++
++  AacPlatformDecoderAndroid(const AacPlatformDecoderAndroid&) = delete;
++  AacPlatformDecoderAndroid& operator=(const AacPlatformDecoderAndroid&) = delete;
++
++  int SampleRateHz() const override;
++  size_t Channels() const override;
++
++  int DecodeInternal(const uint8_t* encoded,
++                     size_t encoded_len,
++                     int sample_rate_hz,
++                     int16_t* decoded,
++                     SpeechType* speech_type) override;
++  void Reset() override;
++
++ private:
++  bool InitDecoder();
++  void ReleaseDecoder();
++
++  const Config config_;
++  bool decoder_initialized_;
++  
++  // Android MediaCodec decoder handle (using JNI)
++  void* media_codec_decoder_;
++};
++
++}  // namespace webrtc
++
++#endif  // MODULES_AUDIO_CODING_CODECS_AAC_ANDROID_AAC_PLATFORM_DECODER_ANDROID_H_
+diff --git a/modules/audio_coding/codecs/aac/android/aac_platform_decoder_android.cc b/modules/audio_coding/codecs/aac/android/aac_platform_decoder_android.cc
+new file mode 100644
+index 0000000000..ff80bac52d6e
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/android/aac_platform_decoder_android.cc
+@@ -0,0 +1,126 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#include "modules/audio_coding/codecs/aac/android/aac_platform_decoder_android.h"
++
++#include <algorithm>
++#include <memory>
++
++#include "rtc_base/checks.h"
++#include "rtc_base/logging.h"
++
++namespace webrtc {
++
++namespace {
++
++constexpr int kSupportedSampleRate = 48000;
++constexpr int kMaxChannels = 2;
++
++}  // namespace
++
++AacPlatformDecoderAndroid::AacPlatformDecoderAndroid(const Config& config)
++    : config_(config),
++      decoder_initialized_(false),
++      media_codec_decoder_(nullptr) {
++  RTC_CHECK_EQ(config_.sample_rate_hz, kSupportedSampleRate);
++  RTC_CHECK_LE(config_.num_channels, kMaxChannels);
++  
++  InitDecoder();
++}
++
++AacPlatformDecoderAndroid::~AacPlatformDecoderAndroid() {
++  ReleaseDecoder();
++}
++
++bool AacPlatformDecoderAndroid::InitDecoder() {
++  RTC_LOG(LS_INFO) << "AacPlatformDecoderAndroid::InitDecoder() - "
++                   << "sample_rate=" << config_.sample_rate_hz
++                   << " channels=" << config_.num_channels;
++
++  // TODO: Initialize Android MediaCodec decoder
++  // This requires JNI calls to:
++  // 1. Create MediaCodec instance with "audio/mp4a-latm" mime type
++  // 2. Configure with MediaFormat (sample rate, channels)
++  // 3. Start the decoder
++  
++  decoder_initialized_ = false;  // Will be true after MediaCodec init
++  RTC_LOG(LS_WARNING) << "MediaCodec AAC decoder initialization not yet implemented";
++  
++  return decoder_initialized_;
++}
++
++void AacPlatformDecoderAndroid::ReleaseDecoder() {
++  if (decoder_initialized_) {
++    // TODO: Release MediaCodec decoder
++    // This requires JNI calls to:
++    // 1. Stop the decoder
++    // 2. Release MediaCodec instance
++    
++    decoder_initialized_ = false;
++    media_codec_decoder_ = nullptr;
++  }
++}
++
++int AacPlatformDecoderAndroid::SampleRateHz() const {
++  return config_.sample_rate_hz;
++}
++
++size_t AacPlatformDecoderAndroid::Channels() const {
++  return config_.num_channels;
++}
++
++int AacPlatformDecoderAndroid::DecodeInternal(const uint8_t* encoded,
++                                               size_t encoded_len,
++                                               int sample_rate_hz,
++                                               int16_t* decoded,
++                                               SpeechType* speech_type) {
++  if (!decoder_initialized_) {
++    RTC_LOG(LS_WARNING) << "AAC decoder not initialized";
++    return -1;
++  }
++
++  RTC_CHECK_EQ(sample_rate_hz, config_.sample_rate_hz);
++
++  // TODO: Implement AAC decoding using MediaCodec
++  // This requires:
++  // 1. Get input buffer from MediaCodec
++  // 2. Copy encoded AAC data to input buffer
++  // 3. Queue input buffer
++  // 4. Dequeue output buffer
++  // 5. Copy decoded PCM data to decoded buffer
++  // 6. Release output buffer
++  
++  // For now, return 0 samples decoded
++  RTC_LOG(LS_VERBOSE) << "AAC decoding not yet implemented - "
++                      << "encoded_len=" << encoded_len
++                      << " sample_rate=" << sample_rate_hz;
++  
++  *speech_type = kSpeech;
++  return 0;
++}
++
++void AacPlatformDecoderAndroid::Reset() {
++  RTC_LOG(LS_INFO) << "AacPlatformDecoderAndroid::Reset()";
++  ReleaseDecoder();
++  InitDecoder();
++}
++
++}  // namespace webrtc
+diff --git a/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
+index 4e8d8c96..5128a456 100644
+--- a/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
++++ b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
+@@ -13,13 +13,23 @@
+ #include <memory>
+ 
+ #include "api/audio_codecs/audio_encoder.h"
++#include "modules/audio_coding/codecs/aac/android/aac_platform_encoder_android.h"
+ 
+ namespace webrtc {
+ 
+ std::unique_ptr<AudioEncoder> AudioEncoderAacImpl::MakeAudioEncoder(
+     const AudioEncoderAac::Config& config,
+     int payload_type) {
+-  // Platform-specific encoder will be created in aac_android/aac_ios patches
+-  return nullptr;
++  // Create Android MediaCodec-based AAC encoder
++  AacPlatformEncoderAndroid::Config encoder_config;
++  encoder_config.sample_rate_hz = config.sample_rate_hz;
++  encoder_config.num_channels = config.num_channels;
++  encoder_config.bitrate_bps = config.bitrate_bps;
++  encoder_config.frame_size_ms = 20;
++  
++  return std::make_unique<AacPlatformEncoderAndroid>(encoder_config,
++                                                      payload_type);
+ }
+ 
+ }  // namespace webrtc
+diff --git a/api/audio_codecs/aac/audio_decoder_aac_impl.cc b/api/audio_codecs/aac/audio_decoder_aac_impl.cc
+index 1115d83e..2166a45f 100644
+--- a/api/audio_codecs/aac/audio_decoder_aac_impl.cc
++++ b/api/audio_codecs/aac/audio_decoder_aac_impl.cc
+@@ -13,13 +13,20 @@
+ #include <memory>
+ 
+ #include "api/audio_codecs/audio_decoder.h"
++#include "modules/audio_coding/codecs/aac/android/aac_platform_decoder_android.h"
+ 
+ namespace webrtc {
+ 
+ std::unique_ptr<AudioDecoder> AudioDecoderAacImpl::MakeAudioDecoder(
+     const AudioDecoderAac::Config& config) {
+-  // Platform-specific decoder will be created in aac_android/aac_ios patches
+-  return nullptr;
++  // Create Android MediaCodec-based AAC decoder
++  AacPlatformDecoderAndroid::Config decoder_config;
++  decoder_config.sample_rate_hz = config.sample_rate_hz;
++  decoder_config.num_channels = config.num_channels;
++  
++  return std::make_unique<AacPlatformDecoderAndroid>(decoder_config);
+ }
+ 
+ }  // namespace webrtc

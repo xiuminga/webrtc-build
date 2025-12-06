@@ -172,8 +172,8 @@ def get_depot_tools(source_dir, fetch=False):
     dir = os.path.join(source_dir, "depot_tools")
     if os.path.exists(dir):
         if fetch:
-            cmd(["git", "fetch"])
-            cmd(["git", "checkout", "-f", "origin/HEAD"])
+            cmd(["git", "fetch"], cwd=dir)
+            cmd(["git", "checkout", "-f", "origin/HEAD"], cwd=dir)
     else:
         cmd(
             [
@@ -196,6 +196,7 @@ PATCHES = {
         "windows_fix_audio_device.patch",
         "ssl_verify_callback_with_native_handle.patch",
         "h265.patch",
+        "aac.patch",
         "fix_perfetto.patch",
         "fix_moved_function_call.patch",
         "remove_crel.patch",
@@ -209,6 +210,7 @@ PATCHES = {
         "windows_fix_audio_device.patch",
         "ssl_verify_callback_with_native_handle.patch",
         "h265.patch",
+        "aac.patch",
         "fix_perfetto.patch",
         "fix_moved_function_call.patch",
         "remove_crel.patch",
@@ -224,6 +226,8 @@ PATCHES = {
         "macos_use_xcode_clang.patch",
         "h265.patch",
         "h265_ios.patch",
+        "aac.patch",
+        "aac_ios.patch",
         "arm_neon_sve_bridge.patch",
         "dav1d_config_change.patch",
         "fix_perfetto.patch",
@@ -244,6 +248,8 @@ PATCHES = {
         "ios_proxy.patch",
         "h265.patch",
         "h265_ios.patch",
+        "aac.patch",
+        "aac_ios.patch",
         "arm_neon_sve_bridge.patch",
         "dav1d_config_change.patch",
         "fix_perfetto.patch",
@@ -266,6 +272,8 @@ PATCHES = {
         "android_proxy.patch",
         "h265.patch",
         "h265_android.patch",
+        "aac.patch",
+        "aac_android.patch",
         "fix_perfetto.patch",
         "fix_moved_function_call.patch",
         "remove_crel.patch",
@@ -280,6 +288,7 @@ PATCHES = {
         "add_license_dav1d.patch",
         "ssl_verify_callback_with_native_handle.patch",
         "h265.patch",
+        "aac.patch",
         "fix_perfetto.patch",
         "fix_moved_function_call.patch",
         "remove_crel.patch",
@@ -291,6 +300,7 @@ PATCHES = {
         "add_license_dav1d.patch",
         "ssl_verify_callback_with_native_handle.patch",
         "h265.patch",
+        "aac.patch",
         "fix_perfetto.patch",
         "fix_moved_function_call.patch",
         "remove_crel.patch",
@@ -302,6 +312,7 @@ PATCHES = {
         "add_license_dav1d.patch",
         "ssl_verify_callback_with_native_handle.patch",
         "h265.patch",
+        "aac.patch",
         "fix_perfetto.patch",
         "fix_moved_function_call.patch",
         "remove_crel.patch",
@@ -313,6 +324,7 @@ PATCHES = {
         "add_license_dav1d.patch",
         "ssl_verify_callback_with_native_handle.patch",
         "h265.patch",
+        "aac.patch",
         "fix_perfetto.patch",
         "fix_moved_function_call.patch",
         "remove_crel.patch",
@@ -324,6 +336,7 @@ PATCHES = {
         "add_license_dav1d.patch",
         "ssl_verify_callback_with_native_handle.patch",
         "h265.patch",
+        "aac.patch",
         "fix_perfetto.patch",
         "fix_moved_function_call.patch",
         "remove_crel.patch",
@@ -335,6 +348,7 @@ PATCHES = {
         "add_license_dav1d.patch",
         "ssl_verify_callback_with_native_handle.patch",
         "h265.patch",
+        "aac.patch",
         "fix_perfetto.patch",
         "fix_moved_function_call.patch",
         "remove_crel.patch",
@@ -346,6 +360,7 @@ PATCHES = {
         "add_license_dav1d.patch",
         "ssl_verify_callback_with_native_handle.patch",
         "h265.patch",
+        "aac.patch",
         "fix_perfetto.patch",
         "fix_moved_function_call.patch",
         "remove_crel.patch",
@@ -357,6 +372,7 @@ PATCHES = {
         "add_license_dav1d.patch",
         "ssl_verify_callback_with_native_handle.patch",
         "h265.patch",
+        "aac.patch",
         "fix_perfetto.patch",
         "fix_moved_function_call.patch",
         "remove_crel.patch",

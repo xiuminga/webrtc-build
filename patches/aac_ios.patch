@@ -1,0 +1,646 @@
+diff --git a/modules/audio_coding/codecs/aac/ios/BUILD.gn b/modules/audio_coding/codecs/aac/ios/BUILD.gn
+new file mode 100644
+index 0000000000..44711fc1b5bd
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/ios/BUILD.gn
+@@ -0,0 +1,46 @@
++# Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++#
++# Use of this source code is governed by a BSD-style license
++# that can be found in the LICENSE file in the root of the source
++# tree. An additional intellectual property rights grant can be found
++# in the file PATENTS.  All contributing project authors may
++# be found in the AUTHORS file in the root of the source tree.
++
++import("../../../../../webrtc.gni")
++
++rtc_library("aac_platform_encoder_ios") {
++  visibility = [ "*" ]
++  sources = [
++    "aac_platform_encoder_ios.h",
++    "aac_platform_encoder_ios.mm",
++  ]
++  deps = [
++    "../../../../../api/audio_codecs:audio_codecs_api",
++    "../../../../../rtc_base:checks",
++    "../../../../../rtc_base:logging",
++  ]
++  frameworks = [ "AudioToolbox.framework" ]
++  absl_deps = [
++    "//third_party/abseil-cpp/absl/base:nullability",
++  ]
++}
++
++rtc_library("aac_platform_decoder_ios") {
++  visibility = [ "*" ]
++  sources = [
++    "aac_platform_decoder_ios.h",
++    "aac_platform_decoder_ios.mm",
++  ]
++  deps = [
++    "../../../../../api/audio_codecs:audio_codecs_api",
++    "../../../../../rtc_base:checks",
++    "../../../../../rtc_base:logging",
++  ]
++  frameworks = [ "AudioToolbox.framework" ]
++  absl_deps = [
++    "//third_party/abseil-cpp/absl/base:nullability",
++  ]
++}
+diff --git a/modules/audio_coding/codecs/aac/ios/aac_platform_encoder_ios.h b/modules/audio_coding/codecs/aac/ios/aac_platform_encoder_ios.h
+new file mode 100644
+index 0000000000..0bda534da67c
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/ios/aac_platform_encoder_ios.h
+@@ -0,0 +1,53 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#ifndef MODULES_AUDIO_CODING_CODECS_AAC_IOS_AAC_PLATFORM_ENCODER_IOS_H_
++#define MODULES_AUDIO_CODING_CODECS_AAC_IOS_AAC_PLATFORM_ENCODER_IOS_H_
++
++#include <AudioToolbox/AudioToolbox.h>
++
++#include <memory>
++#include <vector>
++
++#include "api/audio_codecs/audio_encoder.h"
++#include "rtc_base/buffer.h"
++
++namespace webrtc {
++
++// AAC encoder implementation using iOS AudioToolbox
++class AacPlatformEncoderIos final : public AudioEncoder {
++ public:
++  struct Config {
++    int sample_rate_hz = 48000;
++    int num_channels = 2;
++    int bitrate_bps = 128000;
++    int frame_size_ms = 20;
++  };
++
++  explicit AacPlatformEncoderIos(const Config& config, int payload_type);
++  ~AacPlatformEncoderIos() override;
++
++  int SampleRateHz() const override;
++  size_t NumChannels() const override;
++  size_t Num10MsFramesInNextPacket() const override;
++  size_t Max10MsFramesInAPacket() const override;
++  int GetTargetBitrate() const override;
++
++  EncodedInfo EncodeImpl(uint32_t rtp_timestamp,
++                         rtc::ArrayView<const int16_t> audio,
++                         rtc::Buffer* encoded) override;
++  void Reset() override;
++
++ private:
++  struct Impl;
++  std::unique_ptr<Impl> impl_;
++};
++
++}  // namespace webrtc
++#endif  // MODULES_AUDIO_CODING_CODECS_AAC_IOS_AAC_PLATFORM_ENCODER_IOS_H_
+diff --git a/modules/audio_coding/codecs/aac/ios/aac_platform_encoder_ios.mm b/modules/audio_coding/codecs/aac/ios/aac_platform_encoder_ios.mm
+new file mode 100644
+index 0000000000..87c0641e11d6
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/ios/aac_platform_encoder_ios.mm
+@@ -0,0 +1,232 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#import "modules/audio_coding/codecs/aac/ios/aac_platform_encoder_ios.h"
++
++#include <AudioToolbox/AudioToolbox.h>
++
++#include <algorithm>
++#include <memory>
++#include <utility>
++
++#include "rtc_base/checks.h"
++#include "rtc_base/logging.h"
++
++namespace webrtc {
++
++namespace {
++
++constexpr int kSupportedSampleRate = 48000;
++constexpr int kMaxChannels = 2;
++
++}  // namespace
++
++struct AacPlatformEncoderIos::Impl {
++  Config config;
++  int payload_type;
++  AudioConverterRef audio_converter;
++  bool encoder_initialized;
++  int64_t num_10ms_frames_per_packet;
++  std::vector<int16_t> input_buffer;
++  
++  Impl(const Config& cfg, int pt)
++      : config(cfg),
++        payload_type(pt),
++        audio_converter(nullptr),
++        encoder_initialized(false),
++        num_10ms_frames_per_packet(cfg.frame_size_ms / 10) {}
++  
++  ~Impl() {
++    if (audio_converter) {
++      AudioConverterDispose(audio_converter);
++      audio_converter = nullptr;
++    }
++  }
++  
++  bool InitEncoder() {
++    RTC_LOG(LS_INFO) << "AacPlatformEncoderIos::InitEncoder() - "
++                     << "sample_rate=" << config.sample_rate_hz
++                     << " channels=" << config.num_channels
++                     << " bitrate=" << config.bitrate_bps;
++
++    // Setup input format (PCM)
++    AudioStreamBasicDescription input_format = {0};
++    input_format.mSampleRate = config.sample_rate_hz;
++    input_format.mFormatID = kAudioFormatLinearPCM;
++    input_format.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger |
++                                kLinearPCMFormatFlagIsPacked;
++    input_format.mBytesPerPacket = 2 * config.num_channels;
++    input_format.mFramesPerPacket = 1;
++    input_format.mBytesPerFrame = 2 * config.num_channels;
++    input_format.mChannelsPerFrame = config.num_channels;
++    input_format.mBitsPerChannel = 16;
++
++    // Setup output format (AAC)
++    AudioStreamBasicDescription output_format = {0};
++    output_format.mSampleRate = config.sample_rate_hz;
++    output_format.mFormatID = kAudioFormatMPEG4AAC;
++    output_format.mChannelsPerFrame = config.num_channels;
++
++    // Create audio converter
++    OSStatus status = AudioConverterNew(&input_format, &output_format,
++                                        &audio_converter);
++    if (status != noErr) {
++      RTC_LOG(LS_ERROR) << "Failed to create AudioConverter: " << status;
++      return false;
++    }
++
++    // Set bitrate
++    UInt32 output_bitrate = config.bitrate_bps;
++    status = AudioConverterSetProperty(
++        audio_converter, kAudioConverterEncodeBitRate,
++        sizeof(output_bitrate), &output_bitrate);
++    if (status != noErr) {
++      RTC_LOG(LS_WARNING) << "Failed to set bitrate: " << status;
++    }
++
++    encoder_initialized = true;
++    return true;
++  }
++};
++
++AacPlatformEncoderIos::AacPlatformEncoderIos(const Config& config,
++                                             int payload_type)
++    : impl_(std::make_unique<Impl>(config, payload_type)) {
++  RTC_CHECK_EQ(config.sample_rate_hz, kSupportedSampleRate);
++  RTC_CHECK_LE(config.num_channels, kMaxChannels);
++  RTC_CHECK_GT(config.bitrate_bps, 0);
++  
++  impl_->InitEncoder();
++}
++
++AacPlatformEncoderIos::~AacPlatformEncoderIos() = default;
++
++int AacPlatformEncoderIos::SampleRateHz() const {
++  return impl_->config.sample_rate_hz;
++}
++
++size_t AacPlatformEncoderIos::NumChannels() const {
++  return impl_->config.num_channels;
++}
++
++size_t AacPlatformEncoderIos::Num10MsFramesInNextPacket() const {
++  return impl_->num_10ms_frames_per_packet;
++}
++
++size_t AacPlatformEncoderIos::Max10MsFramesInAPacket() const {
++  return impl_->num_10ms_frames_per_packet;
++}
++
++int AacPlatformEncoderIos::GetTargetBitrate() const {
++  return impl_->config.bitrate_bps;
++}
++
++// Input callback for AudioConverter
++OSStatus AacEncoderInputCallback(
++    AudioConverterRef inAudioConverter,
++    UInt32* ioNumberDataPackets,
++    AudioBufferList* ioData,
++    AudioStreamPacketDescription** outDataPacketDescription,
++    void* inUserData) {
++  auto* impl = static_cast<AacPlatformEncoderIos::Impl*>(inUserData);
++  
++  if (impl->input_buffer.empty()) {
++    *ioNumberDataPackets = 0;
++    return noErr;
++  }
++  
++  ioData->mNumberBuffers = 1;
++  ioData->mBuffers[0].mNumberChannels = impl->config.num_channels;
++  ioData->mBuffers[0].mDataByteSize = impl->input_buffer.size() * sizeof(int16_t);
++  ioData->mBuffers[0].mData = impl->input_buffer.data();
++  
++  *ioNumberDataPackets = impl->input_buffer.size() / impl->config.num_channels;
++  
++  return noErr;
++}
++
++AudioEncoder::EncodedInfo AacPlatformEncoderIos::EncodeImpl(
++    uint32_t rtp_timestamp,
++    rtc::ArrayView<const int16_t> audio,
++    rtc::Buffer* encoded) {
++  EncodedInfo info;
++  info.encoded_timestamp = rtp_timestamp;
++  info.payload_type = impl_->payload_type;
++
++  if (!impl_->encoder_initialized) {
++    RTC_LOG(LS_WARNING) << "AAC encoder not initialized";
++    return info;
++  }
++
++  // Copy audio to input buffer
++  impl_->input_buffer.assign(audio.begin(), audio.end());
++
++  // Prepare output buffer
++  const size_t max_output_size = 2048;  // Typical AAC frame size
++  std::vector<uint8_t> output_buffer(max_output_size);
++  
++  AudioBufferList output_buffer_list;
++  output_buffer_list.mNumberBuffers = 1;
++  output_buffer_list.mBuffers[0].mNumberChannels = impl_->config.num_channels;
++  output_buffer_list.mBuffers[0].mDataByteSize = max_output_size;
++  output_buffer_list.mBuffers[0].mData = output_buffer.data();
++  
++  UInt32 output_packet_count = 1;
++  AudioStreamPacketDescription packet_desc;
++  
++  OSStatus status = AudioConverterFillComplexBuffer(
++      impl_->audio_converter,
++      AacEncoderInputCallback,
++      impl_.get(),
++      &output_packet_count,
++      &output_buffer_list,
++      &packet_desc);
++  
++  if (status != noErr || output_packet_count == 0) {
++    RTC_LOG(LS_WARNING) << "AAC encoding failed: " << status;
++    return info;
++  }
++  
++  // Copy encoded data
++  size_t encoded_bytes = output_buffer_list.mBuffers[0].mDataByteSize;
++  encoded->AppendData(output_buffer.data(), encoded_bytes);
++  
++  info.encoded_bytes = encoded_bytes;
++  
++  RTC_LOG(LS_VERBOSE) << "AAC encoded: timestamp=" << rtp_timestamp
++                      << " input_samples=" << audio.size()
++                      << " output_bytes=" << encoded_bytes;
++  
++  return info;
++}
++
++void AacPlatformEncoderIos::Reset() {
++  RTC_LOG(LS_INFO) << "AacPlatformEncoderIos::Reset()";
++  
++  if (impl_->audio_converter) {
++    AudioConverterReset(impl_->audio_converter);
++  }
++}
++
++}  // namespace webrtc
+diff --git a/modules/audio_coding/codecs/aac/ios/aac_platform_decoder_ios.h b/modules/audio_coding/codecs/aac/ios/aac_platform_decoder_ios.h
+new file mode 100644
+index 0000000000..925ec9d0d8fd
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/ios/aac_platform_decoder_ios.h
+@@ -0,0 +1,47 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#ifndef MODULES_AUDIO_CODING_CODECS_AAC_IOS_AAC_PLATFORM_DECODER_IOS_H_
++#define MODULES_AUDIO_CODING_CODECS_AAC_IOS_AAC_PLATFORM_DECODER_IOS_H_
++
++#include <AudioToolbox/AudioToolbox.h>
++
++#include <memory>
++#include <vector>
++
++#include "api/audio_codecs/audio_decoder.h"
++
++namespace webrtc {
++
++// AAC decoder implementation using iOS AudioToolbox
++class AacPlatformDecoderIos final : public AudioDecoder {
++ public:
++  struct Config {
++    int sample_rate_hz = 48000;
++    int num_channels = 2;
++  };
++
++  explicit AacPlatformDecoderIos(const Config& config);
++  ~AacPlatformDecoderIos() override;
++
++  int SampleRateHz() const override;
++  size_t Channels() const override;
++
++  int DecodeInternal(const uint8_t* encoded,
++                     size_t encoded_len,
++                     int sample_rate_hz,
++                     int16_t* decoded,
++                     SpeechType* speech_type) override;
++  void Reset() override;
++
++ private:
++  struct Impl;
++  std::unique_ptr<Impl> impl_;
++};
++
++}  // namespace webrtc
++#endif  // MODULES_AUDIO_CODING_CODECS_AAC_IOS_AAC_PLATFORM_DECODER_IOS_H_
+diff --git a/modules/audio_coding/codecs/aac/ios/aac_platform_decoder_ios.mm b/modules/audio_coding/codecs/aac/ios/aac_platform_decoder_ios.mm
+new file mode 100644
+index 0000000000..df16790974c8
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/ios/aac_platform_decoder_ios.mm
+@@ -0,0 +1,218 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#import "modules/audio_coding/codecs/aac/ios/aac_platform_decoder_ios.h"
++
++#include <AudioToolbox/AudioToolbox.h>
++
++#include <algorithm>
++#include <memory>
++
++#include "rtc_base/checks.h"
++#include "rtc_base/logging.h"
++
++namespace webrtc {
++
++namespace {
++
++constexpr int kSupportedSampleRate = 48000;
++constexpr int kMaxChannels = 2;
++
++}  // namespace
++
++struct AacPlatformDecoderIos::Impl {
++  Config config;
++  AudioConverterRef audio_converter;
++  bool decoder_initialized;
++  std::vector<uint8_t> input_buffer;
++  size_t input_buffer_pos;
++  
++  Impl(const Config& cfg)
++      : config(cfg),
++        audio_converter(nullptr),
++        decoder_initialized(false),
++        input_buffer_pos(0) {}
++  
++  ~Impl() {
++    if (audio_converter) {
++      AudioConverterDispose(audio_converter);
++      audio_converter = nullptr;
++    }
++  }
++  
++  bool InitDecoder() {
++    RTC_LOG(LS_INFO) << "AacPlatformDecoderIos::InitDecoder() - "
++                     << "sample_rate=" << config.sample_rate_hz
++                     << " channels=" << config.num_channels;
++
++    // Setup input format (AAC)
++    AudioStreamBasicDescription input_format = {0};
++    input_format.mSampleRate = config.sample_rate_hz;
++    input_format.mFormatID = kAudioFormatMPEG4AAC;
++    input_format.mChannelsPerFrame = config.num_channels;
++
++    // Setup output format (PCM)
++    AudioStreamBasicDescription output_format = {0};
++    output_format.mSampleRate = config.sample_rate_hz;
++    output_format.mFormatID = kAudioFormatLinearPCM;
++    output_format.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger |
++                                 kLinearPCMFormatFlagIsPacked;
++    output_format.mBytesPerPacket = 2 * config.num_channels;
++    output_format.mFramesPerPacket = 1;
++    output_format.mBytesPerFrame = 2 * config.num_channels;
++    output_format.mChannelsPerFrame = config.num_channels;
++    output_format.mBitsPerChannel = 16;
++
++    // Create audio converter
++    OSStatus status = AudioConverterNew(&input_format, &output_format,
++                                        &audio_converter);
++    if (status != noErr) {
++      RTC_LOG(LS_ERROR) << "Failed to create AudioConverter: " << status;
++      return false;
++    }
++
++    decoder_initialized = true;
++    return true;
++  }
++};
++
++AacPlatformDecoderIos::AacPlatformDecoderIos(const Config& config)
++    : impl_(std::make_unique<Impl>(config)) {
++  RTC_CHECK_EQ(config.sample_rate_hz, kSupportedSampleRate);
++  RTC_CHECK_LE(config.num_channels, kMaxChannels);
++  
++  impl_->InitDecoder();
++}
++
++AacPlatformDecoderIos::~AacPlatformDecoderIos() = default;
++
++int AacPlatformDecoderIos::SampleRateHz() const {
++  return impl_->config.sample_rate_hz;
++}
++
++size_t AacPlatformDecoderIos::Channels() const {
++  return impl_->config.num_channels;
++}
++
++// Input callback for AudioConverter
++OSStatus AacDecoderInputCallback(
++    AudioConverterRef inAudioConverter,
++    UInt32* ioNumberDataPackets,
++    AudioBufferList* ioData,
++    AudioStreamPacketDescription** outDataPacketDescription,
++    void* inUserData) {
++  auto* impl = static_cast<AacPlatformDecoderIos::Impl*>(inUserData);
++  
++  if (impl->input_buffer_pos >= impl->input_buffer.size()) {
++    *ioNumberDataPackets = 0;
++    return noErr;
++  }
++  
++  size_t remaining = impl->input_buffer.size() - impl->input_buffer_pos;
++  
++  ioData->mNumberBuffers = 1;
++  ioData->mBuffers[0].mNumberChannels = impl->config.num_channels;
++  ioData->mBuffers[0].mDataByteSize = remaining;
++  ioData->mBuffers[0].mData = impl->input_buffer.data() + impl->input_buffer_pos;
++  
++  *ioNumberDataPackets = 1;
++  impl->input_buffer_pos = impl->input_buffer.size();
++  
++  return noErr;
++}
++
++int AacPlatformDecoderIos::DecodeInternal(const uint8_t* encoded,
++                                           size_t encoded_len,
++                                           int sample_rate_hz,
++                                           int16_t* decoded,
++                                           SpeechType* speech_type) {
++  if (!impl_->decoder_initialized) {
++    RTC_LOG(LS_WARNING) << "AAC decoder not initialized";
++    return -1;
++  }
++
++  RTC_CHECK_EQ(sample_rate_hz, impl_->config.sample_rate_hz);
++
++  // Copy encoded data to input buffer
++  impl_->input_buffer.assign(encoded, encoded + encoded_len);
++  impl_->input_buffer_pos = 0;
++
++  // Prepare output buffer
++  const size_t max_output_samples = 2048 * impl_->config.num_channels;
++  std::vector<int16_t> output_buffer(max_output_samples);
++  
++  AudioBufferList output_buffer_list;
++  output_buffer_list.mNumberBuffers = 1;
++  output_buffer_list.mBuffers[0].mNumberChannels = impl_->config.num_channels;
++  output_buffer_list.mBuffers[0].mDataByteSize = 
++      max_output_samples * sizeof(int16_t);
++  output_buffer_list.mBuffers[0].mData = output_buffer.data();
++  
++  UInt32 output_packet_count = max_output_samples / impl_->config.num_channels;
++  
++  OSStatus status = AudioConverterFillComplexBuffer(
++      impl_->audio_converter,
++      AacDecoderInputCallback,
++      impl_.get(),
++      &output_packet_count,
++      &output_buffer_list,
++      nullptr);
++  
++  if (status != noErr || output_packet_count == 0) {
++    RTC_LOG(LS_WARNING) << "AAC decoding failed: " << status;
++    *speech_type = kSpeech;
++    return 0;
++  }
++  
++  // Copy decoded data
++  size_t decoded_samples = output_packet_count * impl_->config.num_channels;
++  std::copy_n(output_buffer.data(), decoded_samples, decoded);
++  
++  *speech_type = kSpeech;
++  
++  RTC_LOG(LS_VERBOSE) << "AAC decoded: encoded_len=" << encoded_len
++                      << " decoded_samples=" << decoded_samples;
++  
++  return decoded_samples;
++}
++
++void AacPlatformDecoderIos::Reset() {
++  RTC_LOG(LS_INFO) << "AacPlatformDecoderIos::Reset()";
++  
++  if (impl_->audio_converter) {
++    AudioConverterReset(impl_->audio_converter);
++  }
++  
++  impl_->input_buffer.clear();
++  impl_->input_buffer_pos = 0;
++}
++
++}  // namespace webrtc
+diff --git a/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
+index 4e8d8c96..a1582b08 100644
+--- a/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
++++ b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
+@@ -13,13 +13,23 @@
+ #include <memory>
+ 
+ #include "api/audio_codecs/audio_encoder.h"
++#include "modules/audio_coding/codecs/aac/ios/aac_platform_encoder_ios.h"
+ 
+ namespace webrtc {
+ 
+ std::unique_ptr<AudioEncoder> AudioEncoderAacImpl::MakeAudioEncoder(
+     const AudioEncoderAac::Config& config,
+     int payload_type) {
+-  // Platform-specific encoder will be created in aac_android/aac_ios patches
+-  return nullptr;
++  // Create iOS AudioToolbox-based AAC encoder
++  AacPlatformEncoderIos::Config encoder_config;
++  encoder_config.sample_rate_hz = config.sample_rate_hz;
++  encoder_config.num_channels = config.num_channels;
++  encoder_config.bitrate_bps = config.bitrate_bps;
++  encoder_config.frame_size_ms = 20;
++  
++  return std::make_unique<AacPlatformEncoderIos>(encoder_config,
++                                                   payload_type);
+ }
+ 
+ }  // namespace webrtc
+diff --git a/api/audio_codecs/aac/audio_decoder_aac_impl.cc b/api/audio_codecs/aac/audio_decoder_aac_impl.cc
+index 1115d83e..df167909 100644
+--- a/api/audio_codecs/aac/audio_decoder_aac_impl.cc
++++ b/api/audio_codecs/aac/audio_decoder_aac_impl.cc
+@@ -13,13 +13,20 @@
+ #include <memory>
+ 
+ #include "api/audio_codecs/audio_decoder.h"
++#include "modules/audio_coding/codecs/aac/ios/aac_platform_decoder_ios.h"
+ 
+ namespace webrtc {
+ 
+ std::unique_ptr<AudioDecoder> AudioDecoderAacImpl::MakeAudioDecoder(
+     const AudioDecoderAac::Config& config) {
+-  // Platform-specific decoder will be created in aac_android/aac_ios patches
+-  return nullptr;
++  // Create iOS AudioToolbox-based AAC decoder
++  AacPlatformDecoderIos::Config decoder_config;
++  decoder_config.sample_rate_hz = config.sample_rate_hz;
++  decoder_config.num_channels = config.num_channels;
++  
++  return std::make_unique<AacPlatformDecoderIos>(decoder_config);
+ }
+ 
+ }  // namespace webrtc

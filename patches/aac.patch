@@ -1,0 +1,550 @@
+diff --git a/webrtc.gni b/webrtc.gni
+index 103983dec4..da13ce6da0 100644
+--- a/webrtc.gni
++++ b/webrtc.gni
+@@ -196,6 +196,12 @@ declare_args() {
+   if (build_with_chromium) {
+     rtc_use_h265 = enable_hevc_parser_and_hw_decoder
+   } else {
+     rtc_use_h265 = true
+   }
+ 
++  # Enable AAC audio codec support.
++  # AAC is not a standard WebRTC codec but can be useful for specific applications.
++  # Note: This requires platform-specific AAC encoder/decoder support.
++  rtc_use_aac = true
++
+   # Enable this flag to make webrtc::Mutex be implemented by absl::Mutex.
+diff --git a/api/audio_codecs/BUILD.gn b/api/audio_codecs/BUILD.gn
+index 1a2b3c4d5e..2f3g4h5i6j 100644
+--- a/api/audio_codecs/BUILD.gn
++++ b/api/audio_codecs/BUILD.gn
+@@ -100,6 +100,10 @@ rtc_library("builtin_audio_encoder_factory") {
+     deps += [ "opus:audio_encoder_opus" ]
+   }
+ 
++  if (rtc_use_aac) {
++    deps += [ "aac:audio_encoder_aac" ]
++  }
++
+   if (rtc_include_ilbc) {
+     deps += [ "ilbc:audio_encoder_ilbc" ]
+   }
+@@ -134,6 +138,10 @@ rtc_library("builtin_audio_decoder_factory") {
+     deps += [ "opus:audio_decoder_opus" ]
+   }
+ 
++  if (rtc_use_aac) {
++    deps += [ "aac:audio_decoder_aac" ]
++  }
++
+   if (rtc_include_ilbc) {
+     deps += [ "ilbc:audio_decoder_ilbc" ]
+   }
+diff --git a/api/audio_codecs/aac/BUILD.gn b/api/audio_codecs/aac/BUILD.gn
+new file mode 100644
+index 0000000000..ce271e17d0
+--- /dev/null
++++ b/api/audio_codecs/aac/BUILD.gn
+@@ -0,0 +1,66 @@
++# Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++#
++# Use of this source code is governed by a BSD-style license
++# that can be found in the LICENSE file in the root of the source
++# tree. An additional intellectual property rights grant can be found
++# in the file PATENTS.  All contributing project authors may
++# be found in the AUTHORS file in the root of the source tree.
++
++import("../../../webrtc.gni")
++
++rtc_library("audio_encoder_aac") {
++  visibility = [ "*" ]
++  poisonous = [ "audio_codecs" ]
++  public = [
++    "audio_encoder_aac.h",
++  ]
++  sources = [
++    "audio_encoder_aac.cc",
++  ]
++  deps = [
++    "..:audio_codecs_api",
++    "../../../api:field_trials_view",
++    "../../../modules/audio_coding/codecs/aac:audio_encoder_aac_impl",
++    "../../../rtc_base:checks",
++  ]
++  absl_deps = [
++    "//third_party/abseil-cpp/absl/base:nullability",
++    "//third_party/abseil-cpp/absl/strings",
++  ]
++}
++
++rtc_library("audio_decoder_aac") {
++  visibility = [ "*" ]
++  poisonous = [ "audio_codecs" ]
++  public = [
++    "audio_decoder_aac.h",
++  ]
++  sources = [
++    "audio_decoder_aac.cc",
++    "audio_decoder_aac_impl.cc",
++  ]
++  deps = [
++    "..:audio_codecs_api",
++    "../../../api:field_trials_view",
++    "../../../rtc_base:checks",
++  ]
++  absl_deps = [
++    "//third_party/abseil-cpp/absl/base:nullability",
++    "//third_party/abseil-cpp/absl/strings",
++  ]
++}
++
++rtc_library("audio_encoder_aac_config") {
++  visibility = [ "*" ]
++  public = [
++    "audio_encoder_aac_config.h",
++  ]
++  deps = [
++    "../../../rtc_base:checks",
++  ]
++  absl_deps = [
++    "//third_party/abseil-cpp/absl/base:nullability",
++    "//third_party/abseil-cpp/absl/types:optional",
++  ]
++}
+diff --git a/api/audio_codecs/aac/audio_encoder_aac.h b/api/audio_codecs/aac/audio_encoder_aac.h
+new file mode 100644
+index 0000000000..b8a169762987
+--- /dev/null
++++ b/api/audio_codecs/aac/audio_encoder_aac.h
+@@ -0,0 +1,43 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#ifndef API_AUDIO_CODECS_AAC_AUDIO_ENCODER_AAC_H_
++#define API_AUDIO_CODECS_AAC_AUDIO_ENCODER_AAC_H_
++
++#include <memory>
++#include <vector>
++
++#include "absl/base/nullability.h"
++#include "api/audio_codecs/audio_codec_pair_id.h"
++#include "api/audio_codecs/audio_encoder.h"
++#include "api/audio_codecs/audio_format.h"
++#include "api/field_trials_view.h"
++
++namespace webrtc {
++
++// AAC encoder API for use as a template parameter to
++// CreateAudioEncoderFactory<...>().
++struct AudioEncoderAac {
++  struct Config {
++    int sample_rate_hz = 48000;
++    int num_channels = 2;
++    int bitrate_bps = 128000;
++  };
++  static absl::optional<Config> SdpToConfig(const SdpAudioFormat& audio_format);
++  static void AppendSupportedEncoders(std::vector<AudioCodecSpec>* specs);
++  static AudioCodecInfo QueryAudioEncoder(const Config& config);
++  static std::unique_ptr<AudioEncoder> MakeAudioEncoder(
++      const Config& config,
++      int payload_type,
++      absl::Nonnull<const FieldTrialsView*> field_trials = nullptr);
++};
++
++}  // namespace webrtc
++#endif  // API_AUDIO_CODECS_AAC_AUDIO_ENCODER_AAC_H_
+diff --git a/api/audio_codecs/aac/audio_encoder_aac.cc b/api/audio_codecs/aac/audio_encoder_aac.cc
+new file mode 100644
+index 0000000000..a1582b080a69
+--- /dev/null
++++ b/api/audio_codecs/aac/audio_encoder_aac.cc
+@@ -0,0 +1,97 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#include "api/audio_codecs/aac/audio_encoder_aac.h"
++
++#include <memory>
++#include <vector>
++
++#include "absl/strings/match.h"
++#include "modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h"
++#include "rtc_base/checks.h"
++
++namespace webrtc {
++
++absl::optional<AudioEncoderAac::Config> AudioEncoderAac::SdpToConfig(
++    const SdpAudioFormat& format) {
++  if (!absl::EqualsIgnoreCase(format.name, "AAC")) {
++    return absl::nullopt;
++  }
++  
++  Config config;
++  config.sample_rate_hz = format.clockrate_hz;
++  config.num_channels = format.num_channels;
++  
++  // Default to 128 kbps bitrate
++  config.bitrate_bps = 128000;
++  
++  return config;
++}
++
++void AudioEncoderAac::AppendSupportedEncoders(
++    std::vector<AudioCodecSpec>* specs) {
++  const SdpAudioFormat fmt = {"AAC", 48000, 2, {{"profile-level-id", "1"}}};
++  const AudioCodecInfo info = QueryAudioEncoder(Config());
++  specs->push_back({fmt, info});
++}
++
++AudioCodecInfo AudioEncoderAac::QueryAudioEncoder(const Config& config) {
++  RTC_DCHECK(config.sample_rate_hz == 48000);
++  constexpr int kSampleRateHz = 48000;
++  constexpr int kFrameSizeMs = 20;
++  constexpr int kBitrateBps = 128000;
++  return {kSampleRateHz, config.num_channels,
++          kBitrateBps, kBitrateBps, kBitrateBps};
++}
++
++std::unique_ptr<AudioEncoder> AudioEncoderAac::MakeAudioEncoder(
++    const Config& config,
++    int payload_type,
++    absl::Nonnull<const FieldTrialsView*> field_trials) {
++  return AudioEncoderAacImpl::MakeAudioEncoder(config, payload_type);
++}
++
++}  // namespace webrtc
+diff --git a/api/audio_codecs/aac/audio_encoder_aac_config.h b/api/audio_codecs/aac/audio_encoder_aac_config.h
+new file mode 100644
+index 0000000000..f47f8dabb6bd
+--- /dev/null
++++ b/api/audio_codecs/aac/audio_encoder_aac_config.h
+@@ -0,0 +1,33 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#ifndef API_AUDIO_CODECS_AAC_AUDIO_ENCODER_AAC_CONFIG_H_
++#define API_AUDIO_CODECS_AAC_AUDIO_ENCODER_AAC_CONFIG_H_
++
++namespace webrtc {
++
++struct AudioEncoderAacConfig {
++  bool IsOk() const {
++    return (sample_rate_hz == 48000) && (num_channels == 1 || num_channels == 2) &&
++           (bitrate_bps > 0);
++  }
++
++  int sample_rate_hz = 48000;
++  int num_channels = 2;
++  int bitrate_bps = 128000;
++  int frame_size_ms = 20;
++};
++
++}  // namespace webrtc
++
++#endif  // API_AUDIO_CODECS_AAC_AUDIO_ENCODER_AAC_CONFIG_H_
+diff --git a/api/audio_codecs/aac/audio_decoder_aac.h b/api/audio_codecs/aac/audio_decoder_aac.h
+new file mode 100644
+index 0000000000..8da13a5af3b9
+--- /dev/null
++++ b/api/audio_codecs/aac/audio_decoder_aac.h
+@@ -0,0 +1,47 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#ifndef API_AUDIO_CODECS_AAC_AUDIO_DECODER_AAC_H_
++#define API_AUDIO_CODECS_AAC_AUDIO_DECODER_AAC_H_
++
++#include <memory>
++#include <vector>
++
++#include "absl/base/nullability.h"
++#include "api/audio_codecs/audio_codec_pair_id.h"
++#include "api/audio_codecs/audio_decoder.h"
++#include "api/audio_codecs/audio_format.h"
++#include "api/field_trials_view.h"
++
++namespace webrtc {
++
++// AAC decoder API for use as a template parameter to
++// CreateAudioDecoderFactory<...>().
++struct AudioDecoderAac {
++  struct Config {
++    bool IsOk() const {
++      return sample_rate_hz == 48000 && (num_channels == 1 || num_channels == 2);
++    }
++    int sample_rate_hz = 48000;
++    int num_channels = 2;
++  };
++  
++  static absl::optional<Config> SdpToConfig(const SdpAudioFormat& audio_format);
++  static void AppendSupportedDecoders(std::vector<AudioCodecSpec>* specs);
++  static std::unique_ptr<AudioDecoder> MakeAudioDecoder(
++      const Config& config,
++      absl::optional<AudioCodecPairId> codec_pair_id = absl::nullopt,
++      absl::Nonnull<const FieldTrialsView*> field_trials = nullptr);
++};
++
++}  // namespace webrtc
++
++#endif  // API_AUDIO_CODECS_AAC_AUDIO_DECODER_AAC_H_
+diff --git a/api/audio_codecs/aac/audio_decoder_aac.cc b/api/audio_codecs/aac/audio_decoder_aac.cc
+new file mode 100644
+index 0000000000..01bf2b14d559
+--- /dev/null
++++ b/api/audio_codecs/aac/audio_decoder_aac.cc
+@@ -0,0 +1,50 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#include "api/audio_codecs/aac/audio_decoder_aac.h"
++
++#include <memory>
++#include <vector>
++
++#include "absl/strings/match.h"
++#include "api/audio_codecs/aac/audio_decoder_aac_impl.h"
++
++namespace webrtc {
++
++absl::optional<AudioDecoderAac::Config> AudioDecoderAac::SdpToConfig(
++    const SdpAudioFormat& format) {
++  if (!absl::EqualsIgnoreCase(format.name, "AAC")) {
++    return absl::nullopt;
++  }
++  
++  Config config;
++  config.sample_rate_hz = format.clockrate_hz;
++  config.num_channels = format.num_channels;
++  
++  return config.IsOk() ? absl::optional<Config>(config) : absl::nullopt;
++}
++
++void AudioDecoderAac::AppendSupportedDecoders(
++    std::vector<AudioCodecSpec>* specs) {
++  const SdpAudioFormat fmt = {"AAC", 48000, 2};
++  const AudioCodecInfo info = {48000, 2, 128000};
++  specs->push_back({fmt, info});
++}
++
++std::unique_ptr<AudioDecoder> AudioDecoderAac::MakeAudioDecoder(
++    const Config& config,
++    absl::optional<AudioCodecPairId> codec_pair_id,
++    absl::Nonnull<const FieldTrialsView*> field_trials) {
++  return AudioDecoderAacImpl::MakeAudioDecoder(config);
++}
++
++}  // namespace webrtc
+diff --git a/api/audio_codecs/aac/audio_decoder_aac_impl.h b/api/audio_codecs/aac/audio_decoder_aac_impl.h
+new file mode 100644
+index 0000000000..b3cec8941ced
+--- /dev/null
++++ b/api/audio_codecs/aac/audio_decoder_aac_impl.h
+@@ -0,0 +1,28 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#ifndef API_AUDIO_CODECS_AAC_AUDIO_DECODER_AAC_IMPL_H_
++#define API_AUDIO_CODECS_AAC_AUDIO_DECODER_AAC_IMPL_H_
++
++#include <memory>
++
++#include "api/audio_codecs/aac/audio_decoder_aac.h"
++#include "api/audio_codecs/audio_decoder.h"
++
++namespace webrtc {
++
++class AudioDecoderAacImpl {
++ public:
++  static std::unique_ptr<AudioDecoder> MakeAudioDecoder(
++      const AudioDecoderAac::Config& config);
++};
++
++}  // namespace webrtc
++#endif  // API_AUDIO_CODECS_AAC_AUDIO_DECODER_AAC_IMPL_H_
+diff --git a/api/audio_codecs/aac/audio_decoder_aac_impl.cc b/api/audio_codecs/aac/audio_decoder_aac_impl.cc
+new file mode 100644
+index 0000000000..1115d83ea47f
+--- /dev/null
++++ b/api/audio_codecs/aac/audio_decoder_aac_impl.cc
+@@ -0,0 +1,25 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#include "api/audio_codecs/aac/audio_decoder_aac_impl.h"
++
++#include <memory>
++
++#include "api/audio_codecs/audio_decoder.h"
++
++namespace webrtc {
++
++std::unique_ptr<AudioDecoder> AudioDecoderAacImpl::MakeAudioDecoder(
++    const AudioDecoderAac::Config& config) {
++  // Platform-specific decoder will be created in aac_android/aac_ios patches
++  return nullptr;
++}
++
++}  // namespace webrtc
+diff --git a/modules/audio_coding/codecs/aac/BUILD.gn b/modules/audio_coding/codecs/aac/BUILD.gn
+new file mode 100644
+index 0000000000..f71867ce1de1
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/BUILD.gn
+@@ -0,0 +1,44 @@
++# Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++#
++# Use of this source code is governed by a BSD-style license
++# that can be found in the LICENSE file in the root of the source
++# tree. An additional intellectual property rights grant can be found
++# in the file PATENTS.  All contributing project authors may
++# be found in the AUTHORS file in the root of the source tree.
++
++import("../../../../webrtc.gni")
++
++rtc_library("audio_encoder_aac_impl") {
++  visibility = [ "*" ]
++  poisonous = [ "audio_codecs" ]
++  sources = [
++    "audio_encoder_aac_impl.cc",
++    "audio_encoder_aac_impl.h",
++  ]
++  deps = [
++    "../../../../api:field_trials_view",
++    "../../../../api/audio_codecs:audio_codecs_api",
++    "../../../../api/audio_codecs/aac:audio_encoder_aac_config",
++    "../../../../rtc_base:checks",
++    "../../../../rtc_base:logging",
++  ]
++  absl_deps = [
++    "//third_party/abseil-cpp/absl/base:nullability",
++    "//third_party/abseil-cpp/absl/strings",
++    "//third_party/abseil-cpp/absl/types:optional",
++  ]
++  
++  # Platform-specific implementations
++  if (is_android) {
++    deps += [ "android:aac_platform_encoder_android" ]
++  }
++  
++  if (is_ios || is_mac) {
++    deps += [ "ios:aac_platform_encoder_ios" ]
++  }
++}
+diff --git a/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h
+new file mode 100644
+index 0000000000..fbce9033802685
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h
+@@ -0,0 +1,66 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#ifndef MODULES_AUDIO_CODING_CODECS_AAC_AUDIO_ENCODER_AAC_IMPL_H_
++#define MODULES_AUDIO_CODING_CODECS_AAC_AUDIO_ENCODER_AAC_IMPL_H_
++
++#include <memory>
++
++#include "api/audio_codecs/aac/audio_encoder_aac.h"
++#include "api/audio_codecs/audio_encoder.h"
++
++namespace webrtc {
++
++class AudioEncoderAacImpl {
++ public:
++  static std::unique_ptr<AudioEncoder> MakeAudioEncoder(
++      const AudioEncoderAac::Config& config,
++      int payload_type);
++};
++
++}  // namespace webrtc
++
++#endif  // MODULES_AUDIO_CODING_CODECS_AAC_AUDIO_ENCODER_AAC_IMPL_H_
+diff --git a/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
+new file mode 100644
+index 0000000000..4e8d8c96498bc2
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
+@@ -0,0 +1,25 @@
++/*
++ *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
++ *
++ *  Use of this source code is governed by a BSD-style license
++ *  that can be found in the LICENSE file in the root of the source
++ *  tree. An additional intellectual property rights grant can be found
++ *  in the file PATENTS.  All contributing project authors may
++ *  be found in the AUTHORS file in the root of the source tree.
++ */
++
++#include "modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h"
++
++#include <memory>
++
++#include "api/audio_codecs/audio_encoder.h"
++
++namespace webrtc {
++
++std::unique_ptr<AudioEncoder> AudioEncoderAacImpl::MakeAudioEncoder(
++    const AudioEncoderAac::Config& config,
++    int payload_type) {
++  // Platform-specific encoder will be created in aac_android/aac_ios patches
++  return nullptr;
++}
++
++}  // namespace webrtc
