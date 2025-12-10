@@ -2,10 +2,7 @@ diff --git a/webrtc.gni b/webrtc.gni
 index 103983dec4..da13ce6da0 100644
 --- a/webrtc.gni
 +++ b/webrtc.gni
-@@ -196,7 +196,12 @@ declare_args() {
-   if (build_with_chromium) {
-     rtc_use_h265 = enable_hevc_parser_and_hw_decoder
-   } else {
+@@ -193,6 +193,11 @@ declare_args() {
      rtc_use_h265 = true
    }
  
@@ -15,32 +12,32 @@ index 103983dec4..da13ce6da0 100644
 +  rtc_use_aac = true
 +
    # Enable this flag to make webrtc::Mutex be implemented by absl::Mutex.
+   rtc_use_absl_mutex = false
+ 
 diff --git a/api/audio_codecs/BUILD.gn b/api/audio_codecs/BUILD.gn
-index 1a2b3c4d5e..2f3g4h5i6j 100644
+index 492a44aa2f..11223344ff 100644
 --- a/api/audio_codecs/BUILD.gn
 +++ b/api/audio_codecs/BUILD.gn
-@@ -100,6 +100,10 @@ rtc_library("builtin_audio_encoder_factory") {
-     deps += [ "opus:audio_encoder_opus" ]
+@@ -71,6 +71,9 @@ rtc_library("builtin_audio_decoder_factory") {
+   } else {
+     defines += [ "WEBRTC_USE_BUILTIN_OPUS=0" ]
    }
- 
-+  if (rtc_use_aac) {
-+    deps += [ "aac:audio_encoder_aac" ]
-+  }
-+
-   if (rtc_include_ilbc) {
-     deps += [ "ilbc:audio_encoder_ilbc" ]
-   }
-@@ -134,6 +138,10 @@ rtc_library("builtin_audio_decoder_factory") {
-     deps += [ "opus:audio_decoder_opus" ]
-   }
- 
 +  if (rtc_use_aac) {
 +    deps += [ "aac:audio_decoder_aac" ]
 +  }
-+
-   if (rtc_include_ilbc) {
-     deps += [ "ilbc:audio_decoder_ilbc" ]
+ }
+ 
+ rtc_library("builtin_audio_encoder_factory") {
+@@ -98,6 +101,9 @@ rtc_library("builtin_audio_encoder_factory") {
+   } else {
+     defines += [ "WEBRTC_USE_BUILTIN_OPUS=0" ]
    }
++  if (rtc_use_aac) {
++    deps += [ "aac:audio_encoder_aac" ]
++  }
+ }
+ 
+ rtc_library("opus_audio_decoder_factory") {
 diff --git a/api/audio_codecs/aac/BUILD.gn b/api/audio_codecs/aac/BUILD.gn
 new file mode 100644
 index 0000000000..ce271e17d0
