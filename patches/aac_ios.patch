@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..44711fc1b5bd
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/ios/BUILD.gn
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,43 @@
 +# Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 +#
 +# Use of this source code is governed by a BSD-style license
@@ -52,7 +52,7 @@ new file mode 100644
 index 0000000000..0bda534da67c
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/ios/aac_platform_encoder_ios.h
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,54 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -112,7 +112,7 @@ new file mode 100644
 index 0000000000..87c0641e11d6
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/ios/aac_platform_encoder_ios.mm
-@@ -0,0 +1,232 @@
+@@ -0,0 +1,218 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -336,7 +336,7 @@ new file mode 100644
 index 0000000000..925ec9d0d8fd
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/ios/aac_platform_decoder_ios.h
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,50 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -392,7 +392,7 @@ new file mode 100644
 index 0000000000..df16790974c8
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/ios/aac_platform_decoder_ios.mm
-@@ -0,0 +1,218 @@
+@@ -0,0 +1,197 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -594,7 +594,7 @@ diff --git a/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc b/modules
 index 4e8d8c96..a1582b08 100644
 --- a/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
 +++ b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
-@@ -13,13 +13,23 @@
+@@ -13,14 +13,22 @@
  #include <memory>
  
  #include "api/audio_codecs/audio_encoder.h"
@@ -623,7 +623,7 @@ diff --git a/api/audio_codecs/aac/audio_decoder_aac_impl.cc b/api/audio_codecs/a
 index 1115d83e..df167909 100644
 --- a/api/audio_codecs/aac/audio_decoder_aac_impl.cc
 +++ b/api/audio_codecs/aac/audio_decoder_aac_impl.cc
-@@ -13,13 +13,20 @@
+@@ -13,13 +13,18 @@
  #include <memory>
  
  #include "api/audio_codecs/audio_decoder.h"
