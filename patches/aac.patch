@@ -15,7 +15,7 @@ index 103983dec4..da13ce6da0 100644
    rtc_use_absl_mutex = false
  
 diff --git a/api/audio_codecs/BUILD.gn b/api/audio_codecs/BUILD.gn
-index 492a44aa2f..11223344ff 100644
+index 492a44aa2f..a1b2c3d4e5 100644
 --- a/api/audio_codecs/BUILD.gn
 +++ b/api/audio_codecs/BUILD.gn
 @@ -71,6 +71,9 @@ rtc_library("builtin_audio_decoder_factory") {
