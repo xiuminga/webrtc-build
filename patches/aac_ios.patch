@@ -24,11 +24,9 @@ index 0000000000..44711fc1b5bd
 +    "../../../../../api/audio_codecs:audio_codecs_api",
 +    "../../../../../rtc_base:checks",
 +    "../../../../../rtc_base:logging",
-+  ]
-+  frameworks = [ "AudioToolbox.framework" ]
-+  absl_deps = [
 +    "//third_party/abseil-cpp/absl/base:nullability",
 +  ]
++  frameworks = [ "AudioToolbox.framework" ]
 +}
 +
 +rtc_library("aac_platform_decoder_ios") {
@@ -41,11 +39,9 @@ index 0000000000..44711fc1b5bd
 +    "../../../../../api/audio_codecs:audio_codecs_api",
 +    "../../../../../rtc_base:checks",
 +    "../../../../../rtc_base:logging",
-+  ]
-+  frameworks = [ "AudioToolbox.framework" ]
-+  absl_deps = [
 +    "//third_party/abseil-cpp/absl/base:nullability",
 +  ]
++  frameworks = [ "AudioToolbox.framework" ]
 +}
 diff --git a/modules/audio_coding/codecs/aac/ios/aac_platform_encoder_ios.h b/modules/audio_coding/codecs/aac/ios/aac_platform_encoder_ios.h
 new file mode 100644

@@ -71,8 +71,6 @@ index 0000000000..ce271e17d0
 +    "../../../api:field_trials_view",
 +    "../../../modules/audio_coding/codecs/aac:audio_encoder_aac_impl",
 +    "../../../rtc_base:checks",
-+  ]
-+  absl_deps = [
 +    "//third_party/abseil-cpp/absl/base:nullability",
 +    "//third_party/abseil-cpp/absl/strings",
 +  ]
@@ -92,8 +90,6 @@ index 0000000000..ce271e17d0
 +    "..:audio_codecs_api",
 +    "../../../api:field_trials_view",
 +    "../../../rtc_base:checks",
-+  ]
-+  absl_deps = [
 +    "//third_party/abseil-cpp/absl/base:nullability",
 +    "//third_party/abseil-cpp/absl/strings",
 +  ]
@@ -106,8 +102,6 @@ index 0000000000..ce271e17d0
 +  ]
 +  deps = [
 +    "../../../rtc_base:checks",
-+  ]
-+  absl_deps = [
 +    "//third_party/abseil-cpp/absl/base:nullability",
 +    "//third_party/abseil-cpp/absl/types:optional",
 +  ]
@@ -464,8 +458,6 @@ index 0000000000..f71867ce1de1
 +    "../../../../api/audio_codecs/aac:audio_encoder_aac_config",
 +    "../../../../rtc_base:checks",
 +    "../../../../rtc_base:logging",
-+  ]
-+  absl_deps = [
 +    "//third_party/abseil-cpp/absl/base:nullability",
 +    "//third_party/abseil-cpp/absl/strings",
 +    "//third_party/abseil-cpp/absl/types:optional",
