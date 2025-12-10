@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..a65926f0da4b
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/android/BUILD.gn
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,41 @@
 +# Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 +#
 +# Use of this source code is governed by a BSD-style license
@@ -50,7 +50,7 @@ new file mode 100644
 index 0000000000..7d9e3ebd3e0f
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/android/aac_platform_encoder_android.h
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,67 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -123,7 +123,7 @@ new file mode 100644
 index 0000000000..897e4f9667c7
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/android/aac_platform_encoder_android.cc
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,133 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -262,7 +262,7 @@ new file mode 100644
 index 0000000000..07ebd3c8a4c8
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/android/aac_platform_decoder_android.h
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,58 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -326,7 +326,7 @@ new file mode 100644
 index 0000000000..ff80bac52d6e
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/android/aac_platform_decoder_android.cc
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,115 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -446,7 +446,7 @@ diff --git a/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc b/modules
 index 4e8d8c96..5128a456 100644
 --- a/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
 +++ b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
-@@ -13,13 +13,23 @@
+@@ -13,14 +13,22 @@
  #include <memory>
  
  #include "api/audio_codecs/audio_encoder.h"
@@ -475,7 +475,7 @@ diff --git a/api/audio_codecs/aac/audio_decoder_aac_impl.cc b/api/audio_codecs/a
 index 1115d83e..2166a45f 100644
 --- a/api/audio_codecs/aac/audio_decoder_aac_impl.cc
 +++ b/api/audio_codecs/aac/audio_decoder_aac_impl.cc
-@@ -13,13 +13,20 @@
+@@ -13,13 +13,18 @@
  #include <memory>
  
  #include "api/audio_codecs/audio_decoder.h"

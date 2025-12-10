@@ -2,7 +2,7 @@ diff --git a/webrtc.gni b/webrtc.gni
 index 103983dec4..da13ce6da0 100644
 --- a/webrtc.gni
 +++ b/webrtc.gni
-@@ -196,6 +196,12 @@ declare_args() {
+@@ -196,7 +196,12 @@ declare_args() {
    if (build_with_chromium) {
      rtc_use_h265 = enable_hevc_parser_and_hw_decoder
    } else {
@@ -46,7 +46,7 @@ new file mode 100644
 index 0000000000..ce271e17d0
 --- /dev/null
 +++ b/api/audio_codecs/aac/BUILD.gn
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,65 @@
 +# Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 +#
 +# Use of this source code is governed by a BSD-style license
@@ -166,7 +166,7 @@ new file mode 100644
 index 0000000000..a1582b080a69
 --- /dev/null
 +++ b/api/audio_codecs/aac/audio_encoder_aac.cc
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,61 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -233,7 +233,7 @@ new file mode 100644
 index 0000000000..f47f8dabb6bd
 --- /dev/null
 +++ b/api/audio_codecs/aac/audio_encoder_aac_config.h
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,30 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -269,7 +269,7 @@ new file mode 100644
 index 0000000000..8da13a5af3b9
 --- /dev/null
 +++ b/api/audio_codecs/aac/audio_decoder_aac.h
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,46 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -321,7 +321,7 @@ new file mode 100644
 index 0000000000..01bf2b14d559
 --- /dev/null
 +++ b/api/audio_codecs/aac/audio_decoder_aac.cc
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,48 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -440,7 +440,7 @@ new file mode 100644
 index 0000000000..f71867ce1de1
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/BUILD.gn
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,39 @@
 +# Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 +#
 +# Use of this source code is governed by a BSD-style license
@@ -485,7 +485,7 @@ new file mode 100644
 index 0000000000..fbce9033802685
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,30 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
@@ -521,7 +521,7 @@ new file mode 100644
 index 0000000000..4e8d8c96498bc2
 --- /dev/null
 +++ b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,26 @@
 +/*
 + *  Copyright (c) 2024 The WebRTC project authors. All Rights Reserved.
 + *
