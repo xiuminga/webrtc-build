@@ -1,0 +1,928 @@
+diff --git a/webrtc.gni b/webrtc.gni
+index 9e79d8c5c8..f6b2d1b7f4 100644
+--- a/webrtc.gni
++++ b/webrtc.gni
+@@
+ declare_args() {
+   # Disable this to avoid building the Opus audio codec.
+   rtc_include_opus = true
++  # Enable or disable AAC codec support (Android / iOS). Default: enabled.
++  rtc_use_aac = true
+@@
+   # Set this to false to skip building tools.
+   rtc_build_tools = true
+ }
++
++# Convenience helper: only build AAC where platform support exists.
++rtc_build_aac = rtc_use_aac && (is_android || is_ios)
+diff --git a/api/audio_codecs/BUILD.gn b/api/audio_codecs/BUILD.gn
+index 16910b9c75..e15e7f9c64 100644
+--- a/api/audio_codecs/BUILD.gn
++++ b/api/audio_codecs/BUILD.gn
+@@
+   deps = [
+     "g711:audio_decoder_g711",
+     "g722:audio_decoder_g722",
+@@
+   ]
++  if (rtc_build_aac) {
++    deps += [ "aac:audio_decoder_aac" ]
++    defines += [ "WEBRTC_USE_BUILTIN_AAC=1" ]
++  } else {
++    defines += [ "WEBRTC_USE_BUILTIN_AAC=0" ]
++  }
+ }
+ 
+ rtc_source_set("builtin_audio_encoder_factory") {
+@@
+   deps = [
+     "g711:audio_encoder_g711",
+     "g722:audio_encoder_g722",
+@@
+   ]
++  if (rtc_build_aac) {
++    deps += [ "aac:audio_encoder_aac" ]
++    defines += [ "WEBRTC_USE_BUILTIN_AAC=1" ]
++  } else {
++    defines += [ "WEBRTC_USE_BUILTIN_AAC=0" ]
++  }
+ }
+diff --git a/api/audio_codecs/aac/BUILD.gn b/api/audio_codecs/aac/BUILD.gn
+new file mode 100644
+index 0000000000..9fb0f21dfc
+--- /dev/null
++++ b/api/audio_codecs/aac/BUILD.gn
+@@
++import("../../../build/webrtc.gni")
++
++rtc_source_set("audio_encoder_aac") {
++  visibility = [ "../*" ]
++  sources = [
++    "audio_encoder_aac.cc",
++    "audio_encoder_aac.h",
++    "audio_encoder_aac_config.h",
++  ]
++  deps = [
++    "//api:array_view",
++    "//api/audio_codecs:audio_codecs_api",
++    "//api/audio_codecs:audio_codecs_api_impl",
++    "//modules/audio_coding/codecs/aac",
++    "//rtc_base:checks",
++    "//rtc_base:logging",
++    "//rtc_base/system:rtc_export",
++    "//third_party/abseil-cpp/absl/strings",
++    "//third_party/abseil-cpp/absl/types:optional",
++  ]
++}
++
++rtc_source_set("audio_decoder_aac") {
++  visibility = [ "../*" ]
++  sources = [
++    "audio_decoder_aac.cc",
++    "audio_decoder_aac.h",
++  ]
++  deps = [
++    "//api/audio:audio_frame_api",
++    "//api/audio_codecs:audio_codecs_api",
++    "//api/audio_codecs:audio_codecs_api_impl",
++    "//modules/audio_coding/codecs/aac",
++    "//rtc_base:logging",
++    "//third_party/abseil-cpp/absl/strings",
++  ]
++}
+diff --git a/api/audio_codecs/aac/audio_encoder_aac_config.h b/api/audio_codecs/aac/audio_encoder_aac_config.h
+new file mode 100644
+index 0000000000..b8f4eeae2e
+--- /dev/null
++++ b/api/audio_codecs/aac/audio_encoder_aac_config.h
+@@
++#ifndef API_AUDIO_CODECS_AAC_AUDIO_ENCODER_AAC_CONFIG_H_
++#define API_AUDIO_CODECS_AAC_AUDIO_ENCODER_AAC_CONFIG_H_
++
++#include <stddef.h>
++#include <stdint.h>
++
++namespace webrtc {
++
++struct AudioEncoderAacConfig {
++  int frame_size_ms = 20;
++  int sample_rate_hz = 48000;
++  int num_channels = 2;
++  int bitrate_bps = 64000;
++  int aac_profile = 2;  // MPEG4 AAC LC
++  int payload_type = -1;
++
++  bool IsOk() const {
++    return frame_size_ms > 0 && (frame_size_ms % 10) == 0 && sample_rate_hz > 0 &&
++           num_channels > 0 && bitrate_bps > 0;
++  }
++};
++
++}  // namespace webrtc
++
++#endif  // API_AUDIO_CODECS_AAC_AUDIO_ENCODER_AAC_CONFIG_H_
+diff --git a/api/audio_codecs/aac/audio_encoder_aac.h b/api/audio_codecs/aac/audio_encoder_aac.h
+new file mode 100644
+index 0000000000..da78d9c778
+--- /dev/null
++++ b/api/audio_codecs/aac/audio_encoder_aac.h
+@@
++#ifndef API_AUDIO_CODECS_AAC_AUDIO_ENCODER_AAC_H_
++#define API_AUDIO_CODECS_AAC_AUDIO_ENCODER_AAC_H_
++
++#include <memory>
++#include <vector>
++
++#include "absl/types/optional.h"
++#include "api/audio_codecs/aac/audio_encoder_aac_config.h"
++#include "api/audio_codecs/audio_encoder_factory_template.h"
++#include "api/audio_codecs/audio_format.h"
++#include "api/field_trials_view.h"
++
++namespace webrtc {
++
++class AudioEncoder;
++
++class AudioEncoderAac {
++ public:
++  using Config = AudioEncoderAacConfig;
++
++  static absl::optional<Config> SdpToConfig(const SdpAudioFormat& format);
++  static void AppendSupportedEncoders(std::vector<AudioCodecSpec>* specs);
++  static AudioCodecInfo QueryAudioEncoder(const Config& config);
++  static std::unique_ptr<AudioEncoder> MakeAudioEncoder(
++      const Config& config,
++      int payload_type,
++      const FieldTrialsView* field_trials);
++};
++
++}  // namespace webrtc
++
++#endif  // API_AUDIO_CODECS_AAC_AUDIO_ENCODER_AAC_H_
+diff --git a/api/audio_codecs/aac/audio_encoder_aac.cc b/api/audio_codecs/aac/audio_encoder_aac.cc
+new file mode 100644
+index 0000000000..b1e9cf2959
+--- /dev/null
++++ b/api/audio_codecs/aac/audio_encoder_aac.cc
+@@
++#include "api/audio_codecs/aac/audio_encoder_aac.h"
++
++#include <algorithm>
++#include <cctype>
++
++#include "absl/strings/match.h"
++#include "api/audio_codecs/audio_format.h"
++#include "modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h"
++#include "rtc_base/checks.h"
++#include "rtc_base/logging.h"
++
++namespace webrtc {
++namespace {
++
++constexpr char kAacCodecName[] = "AAC";
++constexpr int kDefaultSampleRate = 48000;
++constexpr int kDefaultBitrate = 64000;
++
++bool IsAacFormat(const SdpAudioFormat& format) {
++  return absl::EqualsIgnoreCase(format.name, kAacCodecName) ||
++         absl::EqualsIgnoreCase(format.name, "MP4A-LATM") ||
++         absl::EqualsIgnoreCase(format.name, "MPEG4-GENERIC");
++}
++
++AudioCodecSpec CreateDefaultSpec(int channels) {
++  AudioCodecSpec spec;
++  spec.format = {kAacCodecName, kDefaultSampleRate, channels};
++  spec.info = {kDefaultSampleRate, channels, kDefaultBitrate, 120, 120,
++               /*allow_comfort_noise=*/false, /*supports_network_adaptation=*/false};
++  return spec;
++}
++
++}  // namespace
++
++absl::optional<AudioEncoderAac::Config> AudioEncoderAac::SdpToConfig(
++    const SdpAudioFormat& format) {
++  if (!IsAacFormat(format)) {
++    return absl::nullopt;
++  }
++  Config config;
++  config.sample_rate_hz = format.clockrate > 0 ? format.clockrate : kDefaultSampleRate;
++  config.num_channels = format.num_channels > 0 ? format.num_channels : 2;
++  auto it = format.parameters.find("bitrate");
++  if (it != format.parameters.end()) {
++    int bps = atoi(it->second.c_str());
++    if (bps > 0) {
++      config.bitrate_bps = bps;
++    }
++  }
++  return config;
++}
++
++void AudioEncoderAac::AppendSupportedEncoders(std::vector<AudioCodecSpec>* specs) {
++  RTC_DCHECK(specs);
++  specs->push_back(CreateDefaultSpec(1));
++  specs->push_back(CreateDefaultSpec(2));
++}
++
++AudioCodecInfo AudioEncoderAac::QueryAudioEncoder(const Config& config) {
++  RTC_DCHECK(config.IsOk());
++  const int bitrate =
++      std::max(config.bitrate_bps, config.num_channels == 1 ? 32000 : kDefaultBitrate);
++  return AudioCodecInfo(config.sample_rate_hz, config.num_channels, bitrate,
++                        bitrate, bitrate);
++}
++
++std::unique_ptr<AudioEncoder> AudioEncoderAac::MakeAudioEncoder(
++    const Config& config,
++    int payload_type,
++    const FieldTrialsView* field_trials) {
++  RTC_DCHECK(config.IsOk());
++  return std::make_unique<AudioEncoderAacImpl>(config, payload_type, field_trials);
++}
++
++}  // namespace webrtc
+diff --git a/api/audio_codecs/aac/audio_decoder_aac.h b/api/audio_codecs/aac/audio_decoder_aac.h
+new file mode 100644
+index 0000000000..3926cc0086
+--- /dev/null
++++ b/api/audio_codecs/aac/audio_decoder_aac.h
+@@
++#ifndef API_AUDIO_CODECS_AAC_AUDIO_DECODER_AAC_H_
++#define API_AUDIO_CODECS_AAC_AUDIO_DECODER_AAC_H_
++
++#include <memory>
++#include <vector>
++
++#include "api/audio_codecs/audio_decoder_factory_template.h"
++#include "api/audio_codecs/audio_format.h"
++
++namespace webrtc {
++
++class AudioDecoder;
++
++class AudioDecoderAac {
++ public:
++  static bool IsSupportedDecoder(const SdpAudioFormat& format);
++  static std::vector<AudioCodecSpec> SupportedDecoders();
++  static std::unique_ptr<AudioDecoder> MakeAudioDecoder(const SdpAudioFormat& format);
++};
++
++}  // namespace webrtc
++
++#endif  // API_AUDIO_CODECS_AAC_AUDIO_DECODER_AAC_H_
+diff --git a/api/audio_codecs/aac/audio_decoder_aac.cc b/api/audio_codecs/aac/audio_decoder_aac.cc
+new file mode 100644
+index 0000000000..b6c9b6f6da
+--- /dev/null
++++ b/api/audio_codecs/aac/audio_decoder_aac.cc
+@@
++#include "api/audio_codecs/aac/audio_decoder_aac.h"
++
++#include "absl/strings/match.h"
++#include "modules/audio_coding/codecs/aac/audio_decoder_aac_impl.h"
++#include "rtc_base/logging.h"
++
++namespace webrtc {
++namespace {
++
++constexpr char kAacCodecName[] = "AAC";
++
++bool IsAac(const SdpAudioFormat& format) {
++  return absl::EqualsIgnoreCase(format.name, kAacCodecName) ||
++         absl::EqualsIgnoreCase(format.name, "MP4A-LATM") ||
++         absl::EqualsIgnoreCase(format.name, "MPEG4-GENERIC");
++}
++
++}  // namespace
++
++bool AudioDecoderAac::IsSupportedDecoder(const SdpAudioFormat& format) {
++  return IsAac(format);
++}
++
++std::vector<AudioCodecSpec> AudioDecoderAac::SupportedDecoders() {
++  AudioCodecSpec spec;
++  spec.format = {kAacCodecName, 48000, 2};
++  spec.info = {48000, 2, 64000, 120, 120,
++               /*allow_comfort_noise=*/false,
++               /*supports_network_adaptation=*/false};
++  return {spec};
++}
++
++std::unique_ptr<AudioDecoder> AudioDecoderAac::MakeAudioDecoder(
++    const SdpAudioFormat& format) {
++  if (!IsAac(format)) {
++    return nullptr;
++  }
++  return std::make_unique<AudioDecoderAacImpl>(format);
++}
++
++}  // namespace webrtc
+diff --git a/api/audio_codecs/builtin_audio_decoder_factory.cc b/api/audio_codecs/builtin_audio_decoder_factory.cc
+index 5e35e1f083..80e17f0a57 100644
+--- a/api/audio_codecs/builtin_audio_decoder_factory.cc
++++ b/api/audio_codecs/builtin_audio_decoder_factory.cc
+@@
+-#include "api/audio_codecs/opus/audio_decoder_opus.h"
++#include "api/audio_codecs/opus/audio_decoder_opus.h"
++#if WEBRTC_USE_BUILTIN_AAC
++#include "api/audio_codecs/aac/audio_decoder_aac.h"
++#endif
+ #if WEBRTC_USE_BUILTIN_ISAC_FLOAT
+ #include "api/audio_codecs/isac/audio_decoder_isac_float.h"
+ #endif
+@@
+    AudioDecoderG722,
+    AudioDecoderG711,
+    AudioDecoderL16,
+    AudioDecoderIlbc,
+    AudioDecoderOpus,
++#if WEBRTC_USE_BUILTIN_AAC
++    AudioDecoderAac,
++#endif
+ #if WEBRTC_USE_BUILTIN_ISAC_FLOAT
+    AudioDecoderIsacFloat,
+ #endif
+diff --git a/api/audio_codecs/builtin_audio_encoder_factory.cc b/api/audio_codecs/builtin_audio_encoder_factory.cc
+index 4d42fa75a3..1bafbfa3c8 100644
+--- a/api/audio_codecs/builtin_audio_encoder_factory.cc
++++ b/api/audio_codecs/builtin_audio_encoder_factory.cc
+@@
+-#include "api/audio_codecs/opus/audio_encoder_opus.h"
++#include "api/audio_codecs/opus/audio_encoder_opus.h"
++#if WEBRTC_USE_BUILTIN_AAC
++#include "api/audio_codecs/aac/audio_encoder_aac.h"
++#endif
+ #if WEBRTC_USE_BUILTIN_ILBC
+ #include "api/audio_codecs/ilbc/audio_encoder_ilbc.h"
+ #endif
+@@
+    AudioEncoderG722,
+    AudioEncoderG711,
+    AudioEncoderL16,
+    AudioEncoderOpus,
++#if WEBRTC_USE_BUILTIN_AAC
++    AudioEncoderAac,
++#endif
+ #if WEBRTC_USE_BUILTIN_ILBC
+    AudioEncoderIlbc,
+ #endif
+diff --git a/api/audio_codecs/DEPS b/api/audio_codecs/DEPS
+index 6b6c7f34ad..31e46fdc2c 100644
+--- a/api/audio_codecs/DEPS
++++ b/api/audio_codecs/DEPS
+@@
+   "+api/audio_codecs/g722",
+   "+api/audio_codecs/g711",
+   "+api/audio_codecs/ilbc",
+   "+api/audio_codecs/opus",
++  "+api/audio_codecs/aac",
+diff --git a/modules/audio_coding/codecs/aac/BUILD.gn b/modules/audio_coding/codecs/aac/BUILD.gn
+new file mode 100644
+index 0000000000..9f2cb0e585
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/BUILD.gn
+@@
++import("../../../../build/webrtc.gni")
++
++rtc_source_set("aac") {
++  visibility = [ "../*" ]
++  sources = [
++    "audio_encoder_aac_impl.cc",
++    "audio_encoder_aac_impl.h",
++    "audio_decoder_aac_impl.cc",
++    "audio_decoder_aac_impl.h",
++  ]
++  deps = [
++    "//api:array_view",
++    "//api/audio:audio_frame_api",
++    "//api/audio_codecs:audio_codecs_api",
++    "//common_audio",
++    "//rtc_base:checks",
++    "//rtc_base:logging",
++    "//rtc_base/system:rtc_export",
++    "//third_party/abseil-cpp/absl/types:optional",
++  ]
++  if (is_android) {
++    libs = [ "mediandk" ]
++  }
++  if (is_ios) {
++    frameworks = [ "AudioToolbox.framework", "AVFoundation.framework" ]
++  }
++}
+diff --git a/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h
+new file mode 100644
+index 0000000000..544c69d7d9
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h
+@@
++#ifndef MODULES_AUDIO_CODING_CODECS_AAC_AUDIO_ENCODER_AAC_IMPL_H_
++#define MODULES_AUDIO_CODING_CODECS_AAC_AUDIO_ENCODER_AAC_IMPL_H_
++
++#include <vector>
++
++#include "absl/types/optional.h"
++#include "api/array_view.h"
++#include "api/audio_codecs/aac/audio_encoder_aac_config.h"
++#include "api/field_trials_view.h"
++#include "modules/audio_coding/codecs/audio_encoder.h"
++#include "rtc_base/system/rtc_export.h"
++
++namespace webrtc {
++
++class RTC_EXPORT AudioEncoderAacImpl : public AudioEncoder {
++ public:
++  AudioEncoderAacImpl(const AudioEncoderAacConfig& config,
++                      int payload_type,
++                      const FieldTrialsView* field_trials);
++  ~AudioEncoderAacImpl() override;
++
++  int SampleRateHz() const override { return config_.sample_rate_hz; }
++  size_t NumChannels() const override { return config_.num_channels; }
++  size_t Num10MsFramesInNextPacket() const override { return frames_per_packet_; }
++  size_t Max10MsFramesInAPacket() const override { return frames_per_packet_; }
++  int GetTargetBitrate() const override { return config_.bitrate_bps; }
++  EncodedInfo EncodeImpl(uint32_t rtp_timestamp,
++                         rtc::ArrayView<const int16_t> audio,
++                         rtc::Buffer* encoded) override;
++  void Reset() override;
++
++ private:
++  bool InitPlatformEncoder();
++  EncodedInfo EncodePlatform(uint32_t rtp_timestamp,
++                             rtc::ArrayView<const int16_t> audio,
++                             rtc::Buffer* encoded);
++
++  AudioEncoderAacConfig config_;
++  const FieldTrialsView* const field_trials_;
++  const size_t frames_per_packet_;
++  int payload_type_;
++#if defined(WEBRTC_IOS)
++  void* converter_;  // AudioConverterRef
++#elif defined(WEBRTC_ANDROID)
++  void* codec_;  // AMediaCodec*
++#endif
++  std::vector<int16_t> pcm_buffer_;
++};
++
++}  // namespace webrtc
++
++#endif  // MODULES_AUDIO_CODING_CODECS_AAC_AUDIO_ENCODER_AAC_IMPL_H_
+diff --git a/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
+new file mode 100644
+index 0000000000..0f8c7e544c
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/audio_encoder_aac_impl.cc
+@@
++#include "modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h"
++
++#include <algorithm>
++#include <cstring>
++
++#include "rtc_base/checks.h"
++#include "rtc_base/logging.h"
++#include "rtc_base/buffer.h"
++
++#if defined(WEBRTC_IOS)
++#include <AudioToolbox/AudioToolbox.h>
++#elif defined(WEBRTC_ANDROID)
++#include <media/NdkMediaCodec.h>
++#include <media/NdkMediaFormat.h>
++#include <sys/time.h>
++#endif
++
++namespace webrtc {
++
++AudioEncoderAacImpl::AudioEncoderAacImpl(const AudioEncoderAacConfig& config,
++                                         int payload_type,
++                                         const FieldTrialsView* field_trials)
++    : config_(config),
++      field_trials_(field_trials),
++      frames_per_packet_(config.frame_size_ms / 10),
++      payload_type_(payload_type)
++#if defined(WEBRTC_IOS)
++      ,
++      converter_(nullptr)
++#elif defined(WEBRTC_ANDROID)
++      ,
++      codec_(nullptr)
++#endif
++{
++  RTC_DCHECK(config_.IsOk());
++  InitPlatformEncoder();
++}
++
++AudioEncoderAacImpl::~AudioEncoderAacImpl() {
++#if defined(WEBRTC_IOS)
++  if (converter_) {
++    AudioConverterDispose(static_cast<AudioConverterRef>(converter_));
++  }
++#elif defined(WEBRTC_ANDROID)
++  if (codec_) {
++    AMediaCodec_stop(static_cast<AMediaCodec*>(codec_));
++    AMediaCodec_delete(static_cast<AMediaCodec*>(codec_));
++  }
++#endif
++}
++
++bool AudioEncoderAacImpl::InitPlatformEncoder() {
++#if defined(WEBRTC_IOS)
++  AudioStreamBasicDescription in_format = {};
++  in_format.mSampleRate = config_.sample_rate_hz;
++  in_format.mFormatID = kAudioFormatLinearPCM;
++  in_format.mFormatFlags = kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
++  in_format.mBitsPerChannel = 16;
++  in_format.mBytesPerFrame = 2 * config_.num_channels;
++  in_format.mBytesPerPacket = in_format.mBytesPerFrame;
++  in_format.mChannelsPerFrame = config_.num_channels;
++  in_format.mFramesPerPacket = 1;
++
++  AudioStreamBasicDescription out_format = {};
++  out_format.mSampleRate = config_.sample_rate_hz;
++  out_format.mFormatID = kAudioFormatMPEG4AAC;
++  out_format.mChannelsPerFrame = config_.num_channels;
++  out_format.mFramesPerPacket = 1024;
++
++  UInt32 out_size = sizeof(out_format);
++  AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, nullptr, &out_size,
++                         &out_format);
++
++  OSStatus status = AudioConverterNew(&in_format, &out_format,
++                                      reinterpret_cast<AudioConverterRef*>(&converter_));
++  if (status != noErr) {
++    RTC_LOG(LS_ERROR) << "AudioConverterNew failed: " << status;
++    converter_ = nullptr;
++    return false;
++  }
++  return true;
++#elif defined(WEBRTC_ANDROID)
++  codec_ = AMediaCodec_createEncoderByType("audio/mp4a-latm");
++  if (!codec_) {
++    RTC_LOG(LS_ERROR) << "Failed to create AAC MediaCodec encoder";
++    return false;
++  }
++  AMediaFormat* fmt = AMediaFormat_new();
++  AMediaFormat_setString(fmt, AMEDIAFORMAT_KEY_MIME, "audio/mp4a-latm");
++  AMediaFormat_setInt32(fmt, AMEDIAFORMAT_KEY_SAMPLE_RATE, config_.sample_rate_hz);
++  AMediaFormat_setInt32(fmt, AMEDIAFORMAT_KEY_CHANNEL_COUNT, config_.num_channels);
++  AMediaFormat_setInt32(fmt, AMEDIAFORMAT_KEY_BIT_RATE, config_.bitrate_bps);
++  AMediaFormat_setInt32(fmt, AMEDIAFORMAT_KEY_AAC_PROFILE, 2);  // LC
++  media_status_t r = AMediaCodec_configure(static_cast<AMediaCodec*>(codec_), fmt, nullptr,
++                                           nullptr, AMEDIACODEC_CONFIGURE_FLAG_ENCODE);
++  AMediaFormat_delete(fmt);
++  if (r != AMEDIA_OK) {
++    RTC_LOG(LS_ERROR) << "AMediaCodec_configure failed: " << r;
++    AMediaCodec_delete(static_cast<AMediaCodec*>(codec_));
++    codec_ = nullptr;
++    return false;
++  }
++  r = AMediaCodec_start(static_cast<AMediaCodec*>(codec_));
++  if (r != AMEDIA_OK) {
++    RTC_LOG(LS_ERROR) << "AMediaCodec_start failed: " << r;
++    AMediaCodec_delete(static_cast<AMediaCodec*>(codec_));
++    codec_ = nullptr;
++    return false;
++  }
++  return true;
++#else
++  return false;
++#endif
++}
++
++EncodedInfo AudioEncoderAacImpl::EncodeImpl(uint32_t rtp_timestamp,
++                                            rtc::ArrayView<const int16_t> audio,
++                                            rtc::Buffer* encoded) {
++  RTC_CHECK_EQ(
++      audio.size(),
++      static_cast<size_t>(config_.sample_rate_hz * config_.num_channels / 100));
++  pcm_buffer_.insert(pcm_buffer_.end(), audio.begin(), audio.end());
++  EncodedInfo info;
++  if (pcm_buffer_.size() <
++      frames_per_packet_ * config_.sample_rate_hz * config_.num_channels / 100) {
++    info.encoded_bytes = 0;
++    return info;
++  }
++
++  info = EncodePlatform(rtp_timestamp, pcm_buffer_, encoded);
++  pcm_buffer_.clear();
++  return info;
++}
++
++EncodedInfo AudioEncoderAacImpl::EncodePlatform(uint32_t rtp_timestamp,
++                                                rtc::ArrayView<const int16_t> audio,
++                                                rtc::Buffer* encoded) {
++  EncodedInfo info;
++#if defined(WEBRTC_IOS)
++  if (!converter_) {
++    info.encoded_bytes = 0;
++    return info;
++  }
++  const uint8_t* in_bytes = reinterpret_cast<const uint8_t*>(audio.data());
++  const UInt32 in_size = audio.size() * sizeof(int16_t);
++  // Conservative output buffer.
++  uint8_t out_buffer[4096] = {0};
++  UInt32 out_size = sizeof(out_buffer);
++  OSStatus st = AudioConverterConvertBuffer(
++      static_cast<AudioConverterRef>(converter_), in_size, in_bytes, &out_size,
++      out_buffer);
++  if (st != noErr) {
++    RTC_LOG(LS_ERROR) << "AudioConverterConvertBuffer failed: " << st;
++    info.encoded_bytes = 0;
++    return info;
++  }
++  encoded->SetData(out_buffer, out_size);
++  info.encoded_bytes = out_size;
++  info.payload_type = payload_type_;
++  info.encoded_timestamp = rtp_timestamp;
++  info.speech = true;
++  return info;
++#elif defined(WEBRTC_ANDROID)
++  if (!codec_) {
++    info.encoded_bytes = 0;
++    return info;
++  }
++  ssize_t index = AMediaCodec_dequeueInputBuffer(static_cast<AMediaCodec*>(codec_), 1000);
++  if (index >= 0) {
++    size_t buf_size = 0;
++    uint8_t* buf = AMediaCodec_getInputBuffer(static_cast<AMediaCodec*>(codec_), index, &buf_size);
++    size_t copy = std::min(buf_size, audio.size() * sizeof(int16_t));
++    memcpy(buf, audio.data(), copy);
++    int64_t pts_ns = static_cast<int64_t>(rtp_timestamp) * 1000000000LL /
++                     static_cast<int64_t>(config_.sample_rate_hz);
++    AMediaCodec_queueInputBuffer(static_cast<AMediaCodec*>(codec_), index, 0, copy,
++                                 pts_ns, 0);
++  }
++
++  AMediaCodecBufferInfo buffer_info;
++  index = AMediaCodec_dequeueOutputBuffer(static_cast<AMediaCodec*>(codec_), &buffer_info, 1000);
++  if (index >= 0) {
++    size_t out_size = 0;
++    uint8_t* out = AMediaCodec_getOutputBuffer(static_cast<AMediaCodec*>(codec_), index, &out_size);
++    encoded->SetData(out, buffer_info.size);
++    AMediaCodec_releaseOutputBuffer(static_cast<AMediaCodec*>(codec_), index, false);
++
++    info.encoded_bytes = buffer_info.size;
++    info.payload_type = payload_type_;
++    info.encoded_timestamp = rtp_timestamp;
++    info.speech = true;
++  } else {
++    info.encoded_bytes = 0;
++  }
++  return info;
++#else
++  encoded->Clear();
++  info.encoded_bytes = 0;
++  return info;
++#endif
++}
++
++void AudioEncoderAacImpl::Reset() {
++  pcm_buffer_.clear();
++  InitPlatformEncoder();
++}
++
++}  // namespace webrtc
+diff --git a/modules/audio_coding/codecs/aac/audio_decoder_aac_impl.h b/modules/audio_coding/codecs/aac/audio_decoder_aac_impl.h
+new file mode 100644
+index 0000000000..901794b8ee
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/audio_decoder_aac_impl.h
+@@
++#ifndef MODULES_AUDIO_CODING_CODECS_AAC_AUDIO_DECODER_AAC_IMPL_H_
++#define MODULES_AUDIO_CODING_CODECS_AAC_AUDIO_DECODER_AAC_IMPL_H_
++
++#include <stddef.h>
++#include <stdint.h>
++#include <vector>
++
++#include "api/audio_codecs/audio_decoder.h"
++#include "api/audio_codecs/audio_format.h"
++#include "rtc_base/system/rtc_export.h"
++
++namespace webrtc {
++
++class RTC_EXPORT AudioDecoderAacImpl : public AudioDecoder {
++ public:
++  explicit AudioDecoderAacImpl(const SdpAudioFormat& format);
++  ~AudioDecoderAacImpl() override;
++
++  int SampleRateHz() const override { return sample_rate_hz_; }
++  size_t Channels() const override { return channels_; }
++  bool HasDecodePlc() const override { return false; }
++  int DecodeInternal(const uint8_t* encoded,
++                     size_t encoded_len,
++                     int sample_rate_hz,
++                     int16_t* decoded,
++                     SpeechType* speech_type) override;
++  void Reset() override;
++
++ private:
++  bool InitPlatformDecoder();
++
++  int sample_rate_hz_;
++  size_t channels_;
++#if defined(WEBRTC_IOS)
++  void* decoder_;  // AudioConverterRef
++#elif defined(WEBRTC_ANDROID)
++  void* codec_;  // AMediaCodec*
++#endif
++};
++
++}  // namespace webrtc
++
++#endif  // MODULES_AUDIO_CODING_CODECS_AAC_AUDIO_DECODER_AAC_IMPL_H_
+diff --git a/modules/audio_coding/codecs/aac/audio_decoder_aac_impl.cc b/modules/audio_coding/codecs/aac/audio_decoder_aac_impl.cc
+new file mode 100644
+index 0000000000..38bb38b2e3
+--- /dev/null
++++ b/modules/audio_coding/codecs/aac/audio_decoder_aac_impl.cc
+@@
++#include "modules/audio_coding/codecs/aac/audio_decoder_aac_impl.h"
++
++#include <algorithm>
++#include <cstring>
++
++#include "rtc_base/logging.h"
++
++#if defined(WEBRTC_IOS)
++#include <AudioToolbox/AudioToolbox.h>
++#elif defined(WEBRTC_ANDROID)
++#include <media/NdkMediaCodec.h>
++#include <media/NdkMediaFormat.h>
++#endif
++
++namespace webrtc {
++
++AudioDecoderAacImpl::AudioDecoderAacImpl(const SdpAudioFormat& format)
++    : sample_rate_hz_(format.clockrate > 0 ? format.clockrate : 48000),
++      channels_(format.num_channels > 0 ? format.num_channels : 2)
++#if defined(WEBRTC_IOS)
++      ,
++      decoder_(nullptr)
++#elif defined(WEBRTC_ANDROID)
++      ,
++      codec_(nullptr)
++#endif
++{
++  InitPlatformDecoder();
++}
++
++AudioDecoderAacImpl::~AudioDecoderAacImpl() {
++#if defined(WEBRTC_IOS)
++  if (decoder_) {
++    AudioConverterDispose(static_cast<AudioConverterRef>(decoder_));
++  }
++#elif defined(WEBRTC_ANDROID)
++  if (codec_) {
++    AMediaCodec_stop(static_cast<AMediaCodec*>(codec_));
++    AMediaCodec_delete(static_cast<AMediaCodec*>(codec_));
++  }
++#endif
++}
++
++bool AudioDecoderAacImpl::InitPlatformDecoder() {
++#if defined(WEBRTC_IOS)
++  AudioStreamBasicDescription in_format = {};
++  in_format.mSampleRate = sample_rate_hz_;
++  in_format.mFormatID = kAudioFormatMPEG4AAC;
++  in_format.mChannelsPerFrame = channels_;
++
++  AudioStreamBasicDescription out_format = {};
++  out_format.mSampleRate = sample_rate_hz_;
++  out_format.mFormatID = kAudioFormatLinearPCM;
++  out_format.mFormatFlags = kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
++  out_format.mBitsPerChannel = 16;
++  out_format.mChannelsPerFrame = channels_;
++  out_format.mFramesPerPacket = 1;
++  out_format.mBytesPerFrame = 2 * channels_;
++  out_format.mBytesPerPacket = out_format.mBytesPerFrame;
++
++  OSStatus st = AudioConverterNew(&in_format, &out_format,
++                                  reinterpret_cast<AudioConverterRef*>(&decoder_));
++  if (st != noErr) {
++    RTC_LOG(LS_ERROR) << "AudioConverterNew (decoder) failed: " << st;
++    decoder_ = nullptr;
++    return false;
++  }
++  return true;
++#elif defined(WEBRTC_ANDROID)
++  codec_ = AMediaCodec_createDecoderByType("audio/mp4a-latm");
++  if (!codec_) {
++    RTC_LOG(LS_ERROR) << "Failed to create AAC decoder";
++    return false;
++  }
++  AMediaFormat* fmt = AMediaFormat_new();
++  AMediaFormat_setString(fmt, AMEDIAFORMAT_KEY_MIME, "audio/mp4a-latm");
++  AMediaFormat_setInt32(fmt, AMEDIAFORMAT_KEY_SAMPLE_RATE, sample_rate_hz_);
++  AMediaFormat_setInt32(fmt, AMEDIAFORMAT_KEY_CHANNEL_COUNT, static_cast<int32_t>(channels_));
++  media_status_t r =
++      AMediaCodec_configure(static_cast<AMediaCodec*>(codec_), fmt, nullptr, nullptr, 0);
++  AMediaFormat_delete(fmt);
++  if (r != AMEDIA_OK) {
++    RTC_LOG(LS_ERROR) << "AMediaCodec_configure decoder failed: " << r;
++    AMediaCodec_delete(static_cast<AMediaCodec*>(codec_));
++    codec_ = nullptr;
++    return false;
++  }
++  r = AMediaCodec_start(static_cast<AMediaCodec*>(codec_));
++  if (r != AMEDIA_OK) {
++    RTC_LOG(LS_ERROR) << "AMediaCodec_start decoder failed: " << r;
++    AMediaCodec_delete(static_cast<AMediaCodec*>(codec_));
++    codec_ = nullptr;
++    return false;
++  }
++  return true;
++#else
++  return false;
++#endif
++}
++
++int AudioDecoderAacImpl::DecodeInternal(const uint8_t* encoded,
++                                        size_t encoded_len,
++                                        int sample_rate_hz,
++                                        int16_t* decoded,
++                                        SpeechType* speech_type) {
++#if defined(WEBRTC_IOS)
++  if (!decoder_) {
++    return -1;
++  }
++  AudioBufferList out_list;
++  int16_t out_buffer[2048] = {0};
++  out_list.mNumberBuffers = 1;
++  out_list.mBuffers[0].mNumberChannels = channels_;
++  out_list.mBuffers[0].mDataByteSize = sizeof(out_buffer);
++  out_list.mBuffers[0].mData = out_buffer;
++
++  UInt32 out_frames = sizeof(out_buffer) / (channels_ * sizeof(int16_t));
++  struct UserData {
++    const uint8_t* data;
++    size_t size;
++  } user{encoded, encoded_len};
++  OSStatus st = AudioConverterFillComplexBuffer(
++      static_cast<AudioConverterRef>(decoder_),
++      [](AudioConverterRef, UInt32* io_num_packets, AudioBufferList* io_data,
++         AudioStreamPacketDescription**, void* user) -> OSStatus {
++        auto* state = static_cast<UserData*>(user);
++        if (state->size == 0) {
++          *io_num_packets = 0;
++          return -1;
++        }
++        io_data->mNumberBuffers = 1;
++        io_data->mBuffers[0].mData = const_cast<uint8_t*>(state->data);
++        io_data->mBuffers[0].mDataByteSize = state->size;
++        *io_num_packets = 1;
++        state->size = 0;
++        return noErr;
++      },
++      &user, &out_frames, &out_list, nullptr);
++
++  if (st != noErr) {
++    RTC_LOG(LS_ERROR) << "AAC decode failed: " << st;
++    return -1;
++  }
++  memcpy(decoded, out_buffer, out_frames * channels_ * sizeof(int16_t));
++  *speech_type = kSpeech;
++  return static_cast<int>(out_frames);
++#elif defined(WEBRTC_ANDROID)
++  if (!codec_) {
++    return -1;
++  }
++  ssize_t idx = AMediaCodec_dequeueInputBuffer(static_cast<AMediaCodec*>(codec_), 1000);
++  if (idx >= 0) {
++    size_t buf_size = 0;
++    uint8_t* buf =
++        AMediaCodec_getInputBuffer(static_cast<AMediaCodec*>(codec_), idx, &buf_size);
++    size_t copy = std::min(buf_size, encoded_len);
++    memcpy(buf, encoded, copy);
++    AMediaCodec_queueInputBuffer(static_cast<AMediaCodec*>(codec_), idx, 0, copy, 0, 0);
++  }
++  AMediaCodecBufferInfo info;
++  idx = AMediaCodec_dequeueOutputBuffer(static_cast<AMediaCodec*>(codec_), &info, 2000);
++  if (idx >= 0) {
++    size_t out_size = 0;
++    uint8_t* out =
++        AMediaCodec_getOutputBuffer(static_cast<AMediaCodec*>(codec_), idx, &out_size);
++    size_t samples = std::min(out_size / sizeof(int16_t), static_cast<size_t>(2048));
++    size_t samples_per_channel = samples / channels_;
++    memcpy(decoded, out, samples_per_channel * channels_ * sizeof(int16_t));
++    AMediaCodec_releaseOutputBuffer(static_cast<AMediaCodec*>(codec_), idx, false);
++    *speech_type = kSpeech;
++    return static_cast<int>(samples_per_channel);
++  }
++  return 0;
++#else
++  return -1;
++#endif
++}
++
++void AudioDecoderAacImpl::Reset() {
++#if defined(WEBRTC_IOS)
++  if (decoder_) {
++    AudioConverterReset(static_cast<AudioConverterRef>(decoder_));
++  }
++#elif defined(WEBRTC_ANDROID)
++  if (codec_) {
++    AMediaCodec_flush(static_cast<AMediaCodec*>(codec_));
++  }
++#endif
++}
++
++}  // namespace webrtc
