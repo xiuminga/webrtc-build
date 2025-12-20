@@ -458,7 +458,6 @@ index 0000000000..1111111111
 +#include "api/audio_codecs/audio_encoder_factory.h"
 +#include "api/audio_codecs/audio_format.h"
 +#include "api/audio_codecs/aac/audio_encoder_aac_config.h"
-+#include "media/base/media_constants.h"
 +#include "modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h"
 +#include "absl/strings/match.h"
 +#include "rtc_base/checks.h"
@@ -506,7 +505,7 @@ index 0000000000..1111111111
 +  params_48k["sizelength"] = "13";
 +  params_48k["indexlength"] = "3";
 +  params_48k["indexdeltalength"] = "3";
-+  params_48k["config"] = "1190";  // AAC-LC 48kHz stereo
++  params_48k["config"] = kAacDefaultAudioSpecificConfigHex;  // AAC-LC 48kHz stereo
 +  
 +  SdpAudioFormat format_48k(cricket::kAacCodecName, 48000, 2, params_48k);
 +  AudioCodecInfo info_48k(48000, 2, 128000, 32000, 256000);
@@ -610,6 +609,12 @@ index 0000000000..1111111111
 +
 +namespace webrtc {
 +
++inline constexpr char kAacDefaultAudioSpecificConfigHex[] = "1190";
++inline constexpr int kAacAudioObjectTypeLc = 2;
++inline constexpr int kAacAudioObjectTypeShift = 11;
++inline constexpr int kAacSamplingFreqIndexShift = 7;
++inline constexpr int kAacChannelConfigShift = 3;
++
 +struct AudioEncoderAacConfig {
 +  bool IsOk() const {
 +    return (sample_rate_hz == 48000 || sample_rate_hz == 44100 || 
@@ -622,7 +627,7 @@ index 0000000000..1111111111
 +  int sample_rate_hz = 48000;
 +  int num_channels = 2;
 +  int bitrate_bps = 128000;
-+  std::string audio_specific_config_hex;
++  std::string audio_specific_config_hex = kAacDefaultAudioSpecificConfigHex;
 +};
 +
 +}  // namespace webrtc
@@ -2229,6 +2234,7 @@ index 0000000000..1111111111
 +#include <media/NdkMediaFormat.h>
 +#include <android/log.h>
 +
++#include "api/audio_codecs/aac/audio_encoder_aac_config.h"
 +#include "rtc_base/checks.h"
 +#include "rtc_base/logging.h"
 +
@@ -2245,13 +2251,6 @@ index 0000000000..1111111111
 +
 +// AAC frame size (samples per frame for AAC-LC)
 +constexpr size_t kAacSamplesPerFrame = 1024;
-+
-+// AudioSpecificConfig for AAC-LC 48kHz stereo
-+// Binary: 0001 0001 1001 0000
-+// - audioObjectType (5 bits): 00010 = 2 (AAC-LC)
-+// - samplingFrequencyIndex (4 bits): 0011 = 3 (48000 Hz)
-+// - channelConfiguration (4 bits): 0010 = 2 (Stereo)
-+constexpr char kAudioSpecificConfigHex[] = "1190";
 +
 +}  // namespace
 +
@@ -2405,7 +2404,7 @@ index 0000000000..1111111111
 +void AacPlatformEncoderAndroid::GenerateAudioSpecificConfig() {
 +  // For AAC-LC 48kHz stereo, AudioSpecificConfig is always "1190"
 +  // This matches the iOS implementation
-+  audio_specific_config_hex_ = kAudioSpecificConfigHex;
++  audio_specific_config_hex_ = kAacDefaultAudioSpecificConfigHex;
 +  ALOGD("AudioSpecificConfig generated: %s", audio_specific_config_hex_.c_str());
 +}
 +
@@ -3495,12 +3494,15 @@ index 0000000000..1111111111
 +  }
 +  if (audio_specific_config_hex_.empty()) {
 +    // Fallback to manual AudioSpecificConfig (2 bytes)
-+    int audio_object_type = 2;  // AAC-LC
++    int audio_object_type = kAacAudioObjectTypeLc;  // AAC-LC
 +    int sampling_index = SampleRateToIndex(settings_.sample_rate_hz);
 +    int channel_config = static_cast<int>(settings_.num_channels);
-+    uint16_t config = static_cast<uint16_t>((audio_object_type & 0x1F) << 11);
-+    config |= static_cast<uint16_t>((sampling_index & 0x0F) << 7);
-+    config |= static_cast<uint16_t>((channel_config & 0x0F) << 3);
++    uint16_t config = static_cast<uint16_t>((audio_object_type & 0x1F)
++                                           << kAacAudioObjectTypeShift);
++    config |= static_cast<uint16_t>((sampling_index & 0x0F)
++                                    << kAacSamplingFreqIndexShift);
++    config |= static_cast<uint16_t>((channel_config & 0x0F)
++                                    << kAacChannelConfigShift);
 +    uint8_t asc[2];
 +    asc[0] = static_cast<uint8_t>((config >> 8) & 0xFF);
 +    asc[1] = static_cast<uint8_t>(config & 0xFF);
@@ -3705,12 +3707,12 @@ index 0000000000..1111111111
 +TEST_F(AacPlatformEncoderIOSTest, AudioSpecificConfigIsValid) {
 +  const std::string& config_hex = encoder_->audio_specific_config_hex();
 +  
-+  // Should be "1190" for AAC-LC 48kHz stereo
++  // Should be kAacDefaultAudioSpecificConfigHex for AAC-LC 48kHz stereo
 +  // 0x1190 = 0001 0001 1001 0000
 +  // Bits 0-4: audioObjectType = 2 (AAC-LC)
 +  // Bits 5-8: samplingFrequencyIndex = 3 (48000Hz)
 +  // Bits 9-12: channelConfiguration = 2 (Stereo)
-+  EXPECT_EQ(config_hex, "1190");
++  EXPECT_EQ(config_hex, kAacDefaultAudioSpecificConfigHex);
 +}
 +
 +TEST_F(AacPlatformEncoderIOSTest, EncodesMultipleFrames) {
