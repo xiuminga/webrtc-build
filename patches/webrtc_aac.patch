@@ -458,6 +458,7 @@ index 0000000000..1111111111
 +#include "api/audio_codecs/audio_encoder_factory.h"
 +#include "api/audio_codecs/audio_format.h"
 +#include "api/audio_codecs/aac/audio_encoder_aac_config.h"
++#include "media/base/mediaconstants.h"
 +#include "modules/audio_coding/codecs/aac/audio_encoder_aac_impl.h"
 +#include "absl/strings/match.h"
 +#include "rtc_base/checks.h"
@@ -609,6 +610,11 @@ index 0000000000..1111111111
 +
 +namespace webrtc {
 +
++// Default AudioSpecificConfig for AAC-LC 48kHz stereo.
++// 0x1190 = 0001 0001 1001 0000
++// - audioObjectType: 2 (AAC-LC)
++// - samplingFrequencyIndex: 3 (48000 Hz)
++// - channelConfiguration: 2 (stereo)
 +inline constexpr char kAacDefaultAudioSpecificConfigHex[] = "1190";
 +inline constexpr int kAacAudioObjectTypeLc = 2;
 +inline constexpr int kAacAudioObjectTypeShift = 11;
