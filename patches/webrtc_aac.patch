@@ -1930,7 +1930,7 @@ index 0000000000..1111111111
 +  }
 +  
 +  // Store codec reference
-+  media_codec_ = reinterpret_cast<jobject>(codec);
++  media_codec_ = codec;
 +  
 +  // Allocate PCM buffer
 +  pcm_buffer_.resize(kMaxPcmBufferSize);
@@ -1943,7 +1943,7 @@ index 0000000000..1111111111
 +  webrtc::MutexLock lock(&mutex_);
 +  
 +  if (media_codec_) {
-+    AMediaCodec* codec = reinterpret_cast<AMediaCodec*>(media_codec_);
++    AMediaCodec* codec = media_codec_;
 +    AMediaCodec_stop(codec);
 +    AMediaCodec_delete(codec);
 +    media_codec_ = nullptr;
@@ -2053,7 +2053,7 @@ index 0000000000..1111111111
 +  RTC_DCHECK(samples_decoded);
 +  RTC_DCHECK(media_codec_);
 +  
-+  AMediaCodec* codec = reinterpret_cast<AMediaCodec*>(media_codec_);
++  AMediaCodec* codec = media_codec_;
 +  
 +  // Get input buffer
 +  ssize_t input_index = AMediaCodec_dequeueInputBuffer(codec, kTimeoutUs);
@@ -2147,6 +2147,8 @@ index 0000000000..1111111111
 +#include <memory>
 +#include <string>
 +#include <vector>
++#include <media/NdkMediaCodec.h>
++#include <media/NdkMediaCodec.h>
 +
 +#include "api/array_view.h"
 +#include "api/sequence_checker.h"
@@ -2198,8 +2200,8 @@ index 0000000000..1111111111
 +  Settings settings_;
 +  std::unique_ptr<JniHelper> jni_helper_;
 +
-+  // MediaCodec JNI references
-+  jobject media_codec_ = nullptr;           // MediaCodec instance
++  // MediaCodec native handles
++  AMediaCodec* media_codec_ = nullptr;      // MediaCodec instance
 +  jobject input_buffers_ = nullptr;         // Input ByteBuffer array
 +  jobject output_buffers_ = nullptr;        // Output ByteBuffer array
 +  jobject buffer_info_ = nullptr;           // MediaCodec.BufferInfo
@@ -2377,8 +2379,8 @@ index 0000000000..1111111111
 +    return false;
 +  }
 +  
-+  // Store codec reference (cast to jobject for consistency with header)
-+  media_codec_ = reinterpret_cast<jobject>(codec);
++  // Store codec reference
++  media_codec_ = codec;
 +  
 +  // Generate AudioSpecificConfig
 +  GenerateAudioSpecificConfig();
@@ -2391,9 +2393,8 @@ index 0000000000..1111111111
 +  webrtc::MutexLock lock(&mutex_);
 +  
 +  if (media_codec_) {
-+    AMediaCodec* codec = reinterpret_cast<AMediaCodec*>(media_codec_);
-+    AMediaCodec_stop(codec);
-+    AMediaCodec_delete(codec);
++    AMediaCodec_stop(media_codec_);
++    AMediaCodec_delete(media_codec_);
 +    media_codec_ = nullptr;
 +    ALOGD("MediaCodec released");
 +  }
@@ -2474,7 +2475,7 @@ index 0000000000..1111111111
 +  RTC_DCHECK(aac_output);
 +  RTC_DCHECK(media_codec_);
 +  
-+  AMediaCodec* codec = reinterpret_cast<AMediaCodec*>(media_codec_);
++  AMediaCodec* codec = media_codec_;
 +  
 +  // Get input buffer
 +  ssize_t input_index = AMediaCodec_dequeueInputBuffer(codec, kTimeoutUs);
@@ -2661,7 +2662,7 @@ index 0000000000..1111111111
 +  std::unique_ptr<JniHelper> jni_helper_;
 +
 +  // MediaCodec JNI references
-+  jobject media_codec_ = nullptr;           // MediaCodec instance
++  AMediaCodec* media_codec_ = nullptr;      // MediaCodec instance
 +  jobject input_buffers_ = nullptr;         // Input ByteBuffer array
 +  jobject output_buffers_ = nullptr;        // Output ByteBuffer array
 +  jobject buffer_info_ = nullptr;           // MediaCodec.BufferInfo
