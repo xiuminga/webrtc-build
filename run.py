@@ -701,6 +701,9 @@ COMMON_GN_ARGS = [
     "enable_chromium_prelude=false",
     "rtc_rusty_base64=false",
     "use_debug_fission=false",
+    # AAC codec support
+    "proprietary_codecs=true",
+    'ffmpeg_branding="Chrome"',
 ]
 # - M92-M93 あたりで clang++: error: -gdwarf-aranges is not supported with -fembed-bitcode
 #   がでていたので use_xcode_clang=false をすることで修正

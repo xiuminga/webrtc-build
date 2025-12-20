@@ -29,6 +29,10 @@ VERSION ファイルを上げただけの場合は変更履歴記録は不要。
 
 ## タイムライン
 
+- 2025-12-20 [ADD] AAC 音声コーデックサポートを追加
+  - Android と iOS プラットフォーム向けに AAC コーデックサポートを有効化
+  - COMMON_GN_ARGS に `proprietary_codecs=true` と `ffmpeg_branding="Chrome"` を追加
+  - FFmpeg ベースの AAC エンコード/デコードを有効にするための設定変更
 - 2025-09-12 [RELEASE] m139.7528.3.1
   - @miosakuma
 - 2025-09-11 [CHANGE] android_sdk ビルドから armeabi-v7a 向けのバイナリを削除する
