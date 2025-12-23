@@ -30,6 +30,21 @@ v4l2 で 4K に対応するパッチ。
 
 zlib, log_sinks, サイマルキャストのエンコーダーアダプターを追加するパッチ。
 
+## aac.patch
+
+Android / iOS で AAC-LC のエンコード・デコードに対応するパッチ。
+プラットフォーム標準のエンコーダー/デコーダー (Android MediaCodec / iOS AudioToolbox) を利用し、
+第三者ライブラリは導入しない。
+
+デフォルト値は以下:
+
+- 48 kHz
+- 20 ms フレーム
+- 64 kbps (モノラル) / 128 kbps (ステレオ)
+
+SDP では `AAC`/`MP4A-LATM`/`MPEG4-GENERIC` を受け付け、`bitrate` パラメータがあれば優先する。
+HE-AAC は非対応。
+
 ## add_license_dav1d.patch
 
 AV1 デコーダー (dav1d) のライセンスを追加するパッチ。
